@@ -45,9 +45,17 @@ function AuthPage() {
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword(parsed.data);
+    const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
     setLoading(false);
-    if (error) return toast.error("Email ou senha incorretos");
+    if (error) {
+      const message = error.message.toLowerCase().includes("invalid login credentials")
+        ? "Não foi possível entrar. Verifique se o email está cadastrado, se a senha está correta ou se a conta já foi confirmada."
+        : error.message;
+      return toast.error(message);
+    }
+    if (!data.session) {
+      return toast.error("Login não concluído. Confirme seu email e tente novamente.");
+    }
     router.navigate({ to: "/app", replace: true });
   }
 
@@ -70,8 +78,7 @@ function AuthPage() {
       }
       return toast.error(error.message);
     }
-    toast.success("Conta criada! Entrando...");
-    router.navigate({ to: "/app", replace: true });
+    toast.success("Conta criada! Se necessário, confirme seu email antes de entrar.");
   }
 
   return (
