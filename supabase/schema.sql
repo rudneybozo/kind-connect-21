@@ -6,7 +6,7 @@
 
 -- E-mail que vira administrador automaticamente ao criar a conta
 create or replace function public.admin_email()
-returns text language sql immutable as $$ select 'rudneybozo@gmail.com'::text $$;
+returns text language sql immutable set search_path = public as $$ select 'rudneybozo@gmail.com'::text $$;
 
 -- Atualiza a coluna updated_at
 create or replace function public.set_updated_at()
@@ -330,4 +330,11 @@ grant execute on function public.admin_update_user(uuid, text, uuid, boolean, te
 grant execute on function public.admin_delete_user(uuid) to authenticated;
 grant execute on function public.admin_transfer_clients(uuid, uuid) to authenticated;
 grant execute on function public.update_my_name(text) to authenticated;
+grant execute on function public.is_admin(), public.is_active_user(), public.can_access_client(uuid) to authenticated;
+
+-- Funções internas: não ficam expostas para quem não está logado
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+revoke execute on function public.is_admin() from public, anon;
+revoke execute on function public.is_active_user() from public, anon;
+revoke execute on function public.can_access_client(uuid) from public, anon;
 grant execute on function public.is_admin(), public.is_active_user(), public.can_access_client(uuid) to authenticated;

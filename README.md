@@ -61,6 +61,16 @@ Dica: no celular, abra o site no Chrome e use **Adicionar à tela inicial**. Ele
 
 ---
 
+## Alternativa: hospedar na Hostinger
+
+1. Gere o pacote: crie um arquivo `.env.production` com as 2 variáveis do Supabase e rode `npm run build`.
+2. No hPanel da Hostinger, abra **Arquivos → Gerenciador de arquivos** e entre na pasta `public_html` do domínio ou subdomínio (ex.: `crm.seudominio.com.br`).
+3. Envie **o conteúdo** da pasta `dist/` (não a pasta em si), incluindo o arquivo oculto `.htaccess`.
+4. No Supabase, em **Authentication → URL Configuration**, coloque o endereço do site em **Site URL** e `https://seu-endereco/**` em **Redirect URLs**.
+
+O `.htaccess` faz os links internos (ex.: `/app/clientes`) funcionarem ao recarregar a página e força HTTPS.
+Use a raiz de um domínio ou subdomínio. Em subpasta (ex.: `site.com/crm`) o app precisaria ser reconfigurado.
+
 ## Como funciona
 
 | Tela                 | Quem vê    | O que faz                                                                                                                           |
