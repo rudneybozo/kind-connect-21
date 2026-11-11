@@ -10,7 +10,6 @@ import { toast, Toaster } from "sonner";
 import { z } from "zod";
 
 export const Route = createFileRoute("/auth")({
-  ssr: false,
   head: () => ({
     meta: [
       { title: "Entrar | Vendas CRM" },
