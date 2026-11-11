@@ -211,8 +211,10 @@ begin
 end $$;
 
 -- Lojas: qualquer um vê as ativas (para escolher no cadastro); admin vê e altera todas
-create policy stores_select on public.stores for select to anon, authenticated
+create policy stores_select on public.stores for select to authenticated
   using (active or public.is_admin());
+create policy stores_select_anon on public.stores for select to anon
+  using (active);
 create policy stores_insert on public.stores for insert to authenticated with check (public.is_admin());
 create policy stores_update on public.stores for update to authenticated
   using (public.is_admin()) with check (public.is_admin());
