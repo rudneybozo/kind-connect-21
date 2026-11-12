@@ -3,38 +3,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   ArrowLeft,
   Building2,
@@ -51,37 +21,20 @@ import {
   MessageCircle,
   Store as StoreIcon,
   User,
+  Hourglass,
 } from "lucide-react";
 import { ClientFormDialog } from "@/components/crm/ClientFormDialog";
-import { formatBRL, parseBRL, useLookups, useMe } from "@/lib/crm";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { InteractionDialog } from "@/components/crm/InteractionDialog";
+import { SaleDialog } from "@/components/crm/SaleDialog";
+import { DeleteRequestDialog } from "@/components/crm/DeleteRequestDialog";
+import { formatBRL, useLookups, useMe, usePendingDeletions, type DeletableType } from "@/lib/crm";
+import { fmtDate, fmtDateTime } from "@/lib/datetime";
 import { toast } from "sonner";
-import { z } from "zod";
+import type { Tables } from "@/integrations/supabase/types";
 
 export const Route = createFileRoute("/_authenticated/app/clientes/$id")({
   component: ClientDetail,
 });
-
-const interactionSchema = z.object({
-  type: z.enum(["visita", "ligacao", "reuniao", "outro"]),
-  happened_at: z.string().min(1, "Informe data e hora"),
-  contact_person: z.string().trim().max(120).optional().or(z.literal("")),
-  notes: z.string().trim().max(2000).optional().or(z.literal("")),
-  follow_up_at: z.string().optional().or(z.literal("")),
-});
-
-const saleSchema = z.object({
-  sold_at: z.string().min(1, "Informe data da venda"),
-  amount: z.string().optional().or(z.literal("")),
-  description: z.string().trim().max(2000).optional().or(z.literal("")),
-});
-
-function toLocalInput(d?: Date) {
-  const dt = d ?? new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-}
 
 const TYPE_LABEL: Record<string, string> = {
   visita: "Visita",
@@ -96,13 +49,38 @@ function whatsappLink(phone: string) {
   return digits.length >= 12 ? `https://wa.me/${digits}` : null;
 }
 
+type DeleteTarget = { type: DeletableType; id: string; label: string } | null;
+
+function PendingBadge() {
+  return (
+    <Badge variant="outline" className="border-amber-500 text-amber-700 font-normal">
+      <Hourglass className="h-3 w-3 mr-1" />
+      Exclusão solicitada
+    </Badge>
+  );
+}
+
 function ClientDetail() {
   const { id } = Route.useParams();
   const router = useRouter();
   const me = useMe();
   const { storeName, personName } = useLookups();
-  const [editOpen, setEditOpen] = useState(false);
+  const pending = usePendingDeletions(id);
   const isAdmin = me.data?.role === "admin";
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [interactionDialog, setInteractionDialog] = useState<{
+    open: boolean;
+    item: Tables<"interactions"> | null;
+  }>({
+    open: false,
+    item: null,
+  });
+  const [saleDialog, setSaleDialog] = useState<{ open: boolean; item: Tables<"sales"> | null }>({
+    open: false,
+    item: null,
+  });
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
 
   const client = useQuery({
     queryKey: ["client", id],
@@ -137,28 +115,8 @@ function ClientDetail() {
     },
   });
 
-  async function deleteClient() {
-    const { error } = await supabase.from("clients").delete().eq("id", id);
-    if (error) return toast.error(error.message);
-    toast.success("Cliente excluído");
-    router.navigate({ to: "/app/clientes" });
-  }
-
-  async function deleteInteraction(interactionId: string) {
-    if (!window.confirm("Excluir este registro?")) return;
-    const { error } = await supabase.from("interactions").delete().eq("id", interactionId);
-    if (error) return toast.error(error.message);
-    toast.success("Registro excluído");
-    interactions.refetch();
-  }
-
-  async function deleteSale(saleId: string) {
-    if (!window.confirm("Excluir esta venda?")) return;
-    const { error } = await supabase.from("sales").delete().eq("id", saleId);
-    if (error) return toast.error(error.message);
-    toast.success("Venda excluída");
-    sales.refetch();
-  }
+  const isPending = (type: DeletableType, entityId: string) =>
+    pending.data?.has(`${type}:${entityId}`) ?? false;
 
   async function toggleFollowUp(interactionId: string, done: boolean) {
     const { error } = await supabase
@@ -185,7 +143,7 @@ function ClientDetail() {
     return (
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Cliente não encontrado ou sem permissão de acesso.
+          Cliente não encontrado, excluído ou sem permissão de acesso.
         </p>
         <Button asChild variant="outline" size="sm">
           <Link to="/app/clientes">Voltar para clientes</Link>
@@ -196,6 +154,7 @@ function ClientDetail() {
   const c = client.data;
   const wa = c.phone ? whatsappLink(c.phone) : null;
   const totalSold = (sales.data || []).reduce((sum, s) => sum + Number(s.amount ?? 0), 0);
+  const clientPending = isPending("client", c.id);
 
   return (
     <div className="space-y-5">
@@ -272,6 +231,7 @@ function ClientDetail() {
                 {formatBRL(totalSold)} em vendas
               </Badge>
             )}
+            {clientPending && <PendingBadge />}
           </div>
         </div>
         <div className="flex shrink-0">
@@ -279,36 +239,19 @@ function ClientDetail() {
             <Pencil className="h-4 w-4 sm:mr-2" />
             <span className="hidden sm:inline">Editar</span>
           </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="shrink-0 text-destructive hover:text-destructive"
-                aria-label="Excluir"
-              >
-                <Trash2 className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Excluir</span>
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Excluir cliente?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Todas as interações e vendas deste cliente também serão removidas.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={deleteClient}
-                  className="bg-destructive text-destructive-foreground"
-                >
-                  Excluir
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            aria-label="Excluir"
+            disabled={clientPending}
+            onClick={() =>
+              setDeleteTarget({ type: "client", id: c.id, label: `o cliente "${c.name}"` })
+            }
+          >
+            <Trash2 className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">{clientPending ? "Aguardando" : "Excluir"}</span>
+          </Button>
         </div>
       </div>
 
@@ -321,64 +264,80 @@ function ClientDetail() {
         </Card>
       )}
 
-      {/* Interações */}
+      {/* Visitas e agendamentos */}
       <Card>
         <CardHeader className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
           <div className="min-w-0">
             <CardTitle className="text-lg">Visitas e contatos</CardTitle>
             <CardDescription>Registre cada visita, ligação ou reunião</CardDescription>
           </div>
-          <NewInteractionDialog clientId={id} onCreated={() => interactions.refetch()} />
+          <Button
+            size="sm"
+            className="shrink-0"
+            onClick={() => setInteractionDialog({ open: true, item: null })}
+          >
+            <Plus className="h-4 w-4 mr-1" /> Novo
+          </Button>
         </CardHeader>
         <CardContent className="space-y-2">
           {interactions.data?.length === 0 && (
             <p className="text-sm text-muted-foreground">Nenhum registro ainda.</p>
           )}
-          {interactions.data?.map((i) => (
-            <div key={i.id} className="border rounded-lg p-3 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">{TYPE_LABEL[i.type] ?? i.type}</Badge>
-                <span className="text-sm font-medium">
-                  {format(new Date(i.happened_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                </span>
-                {i.contact_person && (
-                  <span className="text-xs text-muted-foreground truncate">
-                    com {i.contact_person}
-                  </span>
-                )}
-                <button
-                  onClick={() => deleteInteraction(i.id)}
-                  className="ml-auto text-muted-foreground hover:text-destructive"
-                  aria-label="Excluir registro"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-              {i.notes && (
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{i.notes}</p>
-              )}
-              {i.follow_up_at && (
-                <div className="flex items-center gap-2 pt-1">
-                  <CalendarClock className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-xs">
-                    Retornar em{" "}
-                    <strong>
-                      {format(new Date(i.follow_up_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
-                    </strong>
-                  </span>
-                  <Button
-                    size="sm"
-                    variant={i.follow_up_done ? "secondary" : "outline"}
-                    className="ml-auto h-7"
-                    onClick={() => toggleFollowUp(i.id, !i.follow_up_done)}
-                  >
-                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                    {i.follow_up_done ? "Feito" : "Marcar feito"}
-                  </Button>
+          {interactions.data?.map((i) => {
+            const itemPending = isPending("interaction", i.id);
+            const label = `a ${(TYPE_LABEL[i.type] ?? "contato").toLowerCase()} de ${fmtDateTime(i.happened_at)}`;
+            return (
+              <div key={i.id} className="border rounded-lg p-3 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">{TYPE_LABEL[i.type] ?? i.type}</Badge>
+                  <span className="text-sm font-medium">{fmtDateTime(i.happened_at)}</span>
+                  {i.contact_person && (
+                    <span className="text-xs text-muted-foreground truncate">
+                      com {i.contact_person}
+                    </span>
+                  )}
+                  {itemPending && <PendingBadge />}
+                  <div className="ml-auto flex items-center gap-1">
+                    <button
+                      onClick={() => setInteractionDialog({ open: true, item: i })}
+                      className="p-1 text-muted-foreground hover:text-foreground"
+                      aria-label="Editar registro"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setDeleteTarget({ type: "interaction", id: i.id, label })}
+                      disabled={itemPending}
+                      className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-40"
+                      aria-label="Excluir registro"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
+                {i.notes && (
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{i.notes}</p>
+                )}
+                {i.follow_up_at && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs">
+                      Retornar em <strong>{fmtDateTime(i.follow_up_at)}</strong>
+                    </span>
+                    <Button
+                      size="sm"
+                      variant={i.follow_up_done ? "secondary" : "outline"}
+                      className="ml-auto h-7"
+                      onClick={() => toggleFollowUp(i.id, !i.follow_up_done)}
+                    >
+                      <CheckCircle2 className="h-3 w-3 mr-1" />
+                      {i.follow_up_done ? "Feito" : "Marcar feito"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
 
@@ -388,57 +347,80 @@ function ClientDetail() {
           <div className="min-w-0">
             <CardTitle className="text-lg">Vendas</CardTitle>
             <CardDescription>
-              Registre quando vender. Um lembrete de pós-venda aparece em 3 dias.
+              Registre quando vender. O pós-venda é lembrado em 3 dias, ou na data que você
+              escolher.
             </CardDescription>
           </div>
-          <NewSaleDialog clientId={id} onCreated={() => sales.refetch()} />
+          <Button
+            size="sm"
+            className="shrink-0 bg-emerald-600 hover:bg-emerald-700"
+            onClick={() => setSaleDialog({ open: true, item: null })}
+          >
+            <DollarSign className="h-4 w-4 mr-1" /> Vendi
+          </Button>
         </CardHeader>
         <CardContent className="space-y-2">
           {sales.data?.length === 0 && (
             <p className="text-sm text-muted-foreground">Sem vendas registradas.</p>
           )}
-          {sales.data?.map((s) => (
-            <div key={s.id} className="border rounded-lg p-3 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className="bg-emerald-600 hover:bg-emerald-600">
-                  <DollarSign className="h-3 w-3 mr-1" />
-                  Venda
-                </Badge>
-                <span className="text-sm font-medium">
-                  {format(new Date(s.sold_at), "dd/MM/yyyy", { locale: ptBR })}
-                </span>
-                {s.amount != null && <span className="text-sm">{formatBRL(s.amount)}</span>}
-                <button
-                  onClick={() => deleteSale(s.id)}
-                  className="ml-auto text-muted-foreground hover:text-destructive"
-                  aria-label="Excluir venda"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+          {sales.data?.map((s) => {
+            const itemPending = isPending("sale", s.id);
+            const label = `a venda de ${formatBRL(s.amount) || "valor não informado"} (${fmtDate(s.sold_at)})`;
+            return (
+              <div key={s.id} className="border rounded-lg p-3 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge className="bg-emerald-600 hover:bg-emerald-600">
+                    <DollarSign className="h-3 w-3 mr-1" />
+                    Venda
+                  </Badge>
+                  <span className="text-sm font-medium">{fmtDate(s.sold_at)}</span>
+                  {s.amount != null && <span className="text-sm">{formatBRL(s.amount)}</span>}
+                  {itemPending && <PendingBadge />}
+                  <div className="ml-auto flex items-center gap-1">
+                    <button
+                      onClick={() => setSaleDialog({ open: true, item: s })}
+                      className="p-1 text-muted-foreground hover:text-foreground"
+                      aria-label="Editar venda"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setDeleteTarget({ type: "sale", id: s.id, label })}
+                      disabled={itemPending}
+                      className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-40"
+                      aria-label="Excluir venda"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                {s.description && (
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                    {s.description}
+                  </p>
+                )}
+                <div className="flex items-center gap-2 pt-1">
+                  <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs">
+                    Pós-venda em <strong>{fmtDateTime(s.post_sale_due_at)}</strong>
+                    <span className="text-muted-foreground">
+                      {" "}
+                      ({s.post_sale_manual ? "data escolhida" : "automático"})
+                    </span>
+                  </span>
+                  <Button
+                    size="sm"
+                    variant={s.post_sale_done_at ? "secondary" : "outline"}
+                    className="ml-auto h-7"
+                    onClick={() => togglePostSale(s.id, !s.post_sale_done_at)}
+                  >
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    {s.post_sale_done_at ? "Feito" : "Marcar feito"}
+                  </Button>
+                </div>
               </div>
-              {s.description && (
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{s.description}</p>
-              )}
-              <div className="flex items-center gap-2 pt-1">
-                <CalendarClock className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs">
-                  Pós-venda em{" "}
-                  <strong>
-                    {format(new Date(s.post_sale_due_at), "dd/MM/yyyy", { locale: ptBR })}
-                  </strong>
-                </span>
-                <Button
-                  size="sm"
-                  variant={s.post_sale_done_at ? "secondary" : "outline"}
-                  className="ml-auto h-7"
-                  onClick={() => togglePostSale(s.id, !s.post_sale_done_at)}
-                >
-                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                  {s.post_sale_done_at ? "Feito" : "Marcar feito"}
-                </Button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </CardContent>
       </Card>
 
@@ -451,244 +433,35 @@ function ClientDetail() {
           client.refetch();
         }}
       />
+      <InteractionDialog
+        clientId={id}
+        interaction={interactionDialog.item}
+        open={interactionDialog.open}
+        onOpenChange={(open) => setInteractionDialog((s) => ({ ...s, open }))}
+        onSaved={() => interactions.refetch()}
+      />
+      <SaleDialog
+        clientId={id}
+        sale={saleDialog.item}
+        open={saleDialog.open}
+        onOpenChange={(open) => setSaleDialog((s) => ({ ...s, open }))}
+        onSaved={() => sales.refetch()}
+      />
+      {deleteTarget && (
+        <DeleteRequestDialog
+          entityType={deleteTarget.type}
+          entityId={deleteTarget.id}
+          label={deleteTarget.label}
+          open={Boolean(deleteTarget)}
+          onOpenChange={(open) => !open && setDeleteTarget(null)}
+          onRequested={() => pending.refetch()}
+          onDeleted={() => {
+            if (deleteTarget.type === "client") router.navigate({ to: "/app/clientes" });
+            else if (deleteTarget.type === "interaction") interactions.refetch();
+            else sales.refetch();
+          }}
+        />
+      )}
     </div>
-  );
-}
-
-function NewInteractionDialog({
-  clientId,
-  onCreated,
-}: {
-  clientId: string;
-  onCreated: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
-    type: "visita" as "visita" | "ligacao" | "reuniao" | "outro",
-    happened_at: toLocalInput(),
-    contact_person: "",
-    notes: "",
-    follow_up_at: "",
-  });
-  const [saving, setSaving] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const parsed = interactionSchema.safeParse(form);
-    if (!parsed.success) return toast.error(parsed.error.issues[0].message);
-    setSaving(true);
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) {
-      setSaving(false);
-      return toast.error("Sessão expirada");
-    }
-    const { error } = await supabase.from("interactions").insert({
-      user_id: userData.user.id,
-      client_id: clientId,
-      type: parsed.data.type,
-      happened_at: new Date(parsed.data.happened_at).toISOString(),
-      contact_person: parsed.data.contact_person || null,
-      notes: parsed.data.notes || null,
-      follow_up_at: parsed.data.follow_up_at
-        ? new Date(parsed.data.follow_up_at).toISOString()
-        : null,
-    });
-    setSaving(false);
-    if (error) return toast.error(error.message);
-    toast.success("Registro salvo");
-    setForm({
-      ...form,
-      contact_person: "",
-      notes: "",
-      follow_up_at: "",
-      happened_at: toLocalInput(),
-    });
-    setOpen(false);
-    onCreated();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" className="shrink-0">
-          <Plus className="h-4 w-4 mr-1" /> Novo
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Registrar visita/contato</DialogTitle>
-          <DialogDescription>Anote o que foi conversado e quando retornar.</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} className="space-y-3">
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div>
-              <Label>Tipo</Label>
-              <Select
-                value={form.type}
-                onValueChange={(v) => setForm({ ...form, type: v as typeof form.type })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="visita">Visita</SelectItem>
-                  <SelectItem value="ligacao">Ligação</SelectItem>
-                  <SelectItem value="reuniao">Reunião</SelectItem>
-                  <SelectItem value="outro">Outro</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="happened">Data e hora *</Label>
-              <Input
-                id="happened"
-                type="datetime-local"
-                value={form.happened_at}
-                onChange={(e) => setForm({ ...form, happened_at: e.target.value })}
-                required
-              />
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="cp">Com quem falou</Label>
-            <Input
-              id="cp"
-              value={form.contact_person}
-              onChange={(e) => setForm({ ...form, contact_person: e.target.value })}
-              placeholder="Nome / cargo"
-              maxLength={120}
-            />
-          </div>
-          <div>
-            <Label htmlFor="notes">O que foi conversado</Label>
-            <Textarea
-              id="notes"
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              rows={3}
-              maxLength={2000}
-            />
-          </div>
-          <div>
-            <Label htmlFor="fu">Próximo retorno / visita</Label>
-            <Input
-              id="fu"
-              type="datetime-local"
-              value={form.follow_up_at}
-              onChange={(e) => setForm({ ...form, follow_up_at: e.target.value })}
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              Opcional. Aparece como pendência no painel.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button type="submit" disabled={saving}>
-              {saving ? "Salvando…" : "Salvar"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function NewSaleDialog({ clientId, onCreated }: { clientId: string; onCreated: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ sold_at: toLocalInput(), amount: "", description: "" });
-  const [saving, setSaving] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const parsed = saleSchema.safeParse(form);
-    if (!parsed.success) return toast.error(parsed.error.issues[0].message);
-    setSaving(true);
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) {
-      setSaving(false);
-      return toast.error("Sessão expirada");
-    }
-    const soldAt = new Date(parsed.data.sold_at);
-    const postSaleDue = new Date(soldAt.getTime() + 3 * 24 * 60 * 60 * 1000);
-    const amountNum = parsed.data.amount ? parseBRL(parsed.data.amount) : null;
-    if (parsed.data.amount && (amountNum === null || Number.isNaN(amountNum) || amountNum < 0)) {
-      setSaving(false);
-      return toast.error("Valor inválido");
-    }
-    const { error } = await supabase.from("sales").insert({
-      user_id: userData.user.id,
-      client_id: clientId,
-      sold_at: soldAt.toISOString(),
-      amount: amountNum,
-      description: parsed.data.description || null,
-      post_sale_due_at: postSaleDue.toISOString(),
-    });
-    setSaving(false);
-    if (error) return toast.error(error.message);
-    toast.success("Venda registrada — lembrete de pós-venda em 3 dias");
-    setOpen(false);
-    setForm({ sold_at: toLocalInput(), amount: "", description: "" });
-    onCreated();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          size="sm"
-          variant="default"
-          className="shrink-0 bg-emerald-600 hover:bg-emerald-700"
-        >
-          <DollarSign className="h-4 w-4 mr-1" /> Vendi
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Registrar venda</DialogTitle>
-          <DialogDescription>
-            Em 3 dias você receberá um lembrete para o pós-venda.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} className="space-y-3">
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="sold">Data da venda *</Label>
-              <Input
-                id="sold"
-                type="datetime-local"
-                value={form.sold_at}
-                onChange={(e) => setForm({ ...form, sold_at: e.target.value })}
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="amount">Valor (R$)</Label>
-              <Input
-                id="amount"
-                inputMode="decimal"
-                value={form.amount}
-                onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                placeholder="0,00"
-              />
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="desc">Descrição</Label>
-            <Textarea
-              id="desc"
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              rows={3}
-              maxLength={2000}
-              placeholder="Produtos, condições, observações..."
-            />
-          </div>
-          <DialogFooter>
-            <Button type="submit" disabled={saving} className="bg-emerald-600 hover:bg-emerald-700">
-              {saving ? "Salvando…" : "Registrar venda"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

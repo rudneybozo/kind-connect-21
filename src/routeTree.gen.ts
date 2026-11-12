@@ -15,6 +15,8 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as RedefinirSenhaRouteImport } from './routes/redefinir-senha'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
 import { Route as AuthenticatedAppEquipeRouteImport } from './routes/_authenticated/app.equipe'
+import { Route as AuthenticatedAppExclusoesRouteImport } from './routes/_authenticated/app.exclusoes'
+import { Route as AuthenticatedAppHistoricoRouteImport } from './routes/_authenticated/app.historico'
 import { Route as AuthenticatedAppClientesIndexRouteImport } from './routes/_authenticated/app.clientes.index'
 import { Route as AuthenticatedAppClientesIdRouteImport } from './routes/_authenticated/app.clientes.$id'
 
@@ -47,6 +49,18 @@ const AuthenticatedAppEquipeRoute = AuthenticatedAppEquipeRouteImport.update({
   path: '/app/equipe',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAppExclusoesRoute =
+  AuthenticatedAppExclusoesRouteImport.update({
+    id: '/app/exclusoes',
+    path: '/app/exclusoes',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAppHistoricoRoute =
+  AuthenticatedAppHistoricoRouteImport.update({
+    id: '/app/historico',
+    path: '/app/historico',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAppClientesIndexRoute =
   AuthenticatedAppClientesIndexRouteImport.update({
     id: '/app/clientes/',
@@ -65,6 +79,8 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/redefinir-senha': typeof RedefinirSenhaRoute
   '/app/equipe': typeof AuthenticatedAppEquipeRoute
+  '/app/exclusoes': typeof AuthenticatedAppExclusoesRoute
+  '/app/historico': typeof AuthenticatedAppHistoricoRoute
   '/app/': typeof AuthenticatedAppIndexRoute
   '/app/clientes/$id': typeof AuthenticatedAppClientesIdRoute
   '/app/clientes/': typeof AuthenticatedAppClientesIndexRoute
@@ -74,6 +90,8 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/redefinir-senha': typeof RedefinirSenhaRoute
   '/app/equipe': typeof AuthenticatedAppEquipeRoute
+  '/app/exclusoes': typeof AuthenticatedAppExclusoesRoute
+  '/app/historico': typeof AuthenticatedAppHistoricoRoute
   '/app': typeof AuthenticatedAppIndexRoute
   '/app/clientes/$id': typeof AuthenticatedAppClientesIdRoute
   '/app/clientes': typeof AuthenticatedAppClientesIndexRoute
@@ -85,6 +103,8 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/redefinir-senha': typeof RedefinirSenhaRoute
   '/_authenticated/app/equipe': typeof AuthenticatedAppEquipeRoute
+  '/_authenticated/app/exclusoes': typeof AuthenticatedAppExclusoesRoute
+  '/_authenticated/app/historico': typeof AuthenticatedAppHistoricoRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/clientes/$id': typeof AuthenticatedAppClientesIdRoute
   '/_authenticated/app/clientes/': typeof AuthenticatedAppClientesIndexRoute
@@ -96,6 +116,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/redefinir-senha'
     | '/app/equipe'
+    | '/app/exclusoes'
+    | '/app/historico'
     | '/app/'
     | '/app/clientes/$id'
     | '/app/clientes/'
@@ -105,6 +127,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/redefinir-senha'
     | '/app/equipe'
+    | '/app/exclusoes'
+    | '/app/historico'
     | '/app'
     | '/app/clientes/$id'
     | '/app/clientes'
@@ -115,6 +139,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/redefinir-senha'
     | '/_authenticated/app/equipe'
+    | '/_authenticated/app/exclusoes'
+    | '/_authenticated/app/historico'
     | '/_authenticated/app/'
     | '/_authenticated/app/clientes/$id'
     | '/_authenticated/app/clientes/'
@@ -171,6 +197,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppEquipeRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/app/exclusoes': {
+      id: '/_authenticated/app/exclusoes'
+      path: '/app/exclusoes'
+      fullPath: '/app/exclusoes'
+      preLoaderRoute: typeof AuthenticatedAppExclusoesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app/historico': {
+      id: '/_authenticated/app/historico'
+      path: '/app/historico'
+      fullPath: '/app/historico'
+      preLoaderRoute: typeof AuthenticatedAppHistoricoRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/app/clientes/': {
       id: '/_authenticated/app/clientes/'
       path: '/app/clientes'
@@ -190,6 +230,8 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAppEquipeRoute: typeof AuthenticatedAppEquipeRoute
+  AuthenticatedAppExclusoesRoute: typeof AuthenticatedAppExclusoesRoute
+  AuthenticatedAppHistoricoRoute: typeof AuthenticatedAppHistoricoRoute
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
   AuthenticatedAppClientesIdRoute: typeof AuthenticatedAppClientesIdRoute
   AuthenticatedAppClientesIndexRoute: typeof AuthenticatedAppClientesIndexRoute
@@ -197,6 +239,8 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAppEquipeRoute: AuthenticatedAppEquipeRoute,
+  AuthenticatedAppExclusoesRoute: AuthenticatedAppExclusoesRoute,
+  AuthenticatedAppHistoricoRoute: AuthenticatedAppHistoricoRoute,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
   AuthenticatedAppClientesIdRoute: AuthenticatedAppClientesIdRoute,
   AuthenticatedAppClientesIndexRoute: AuthenticatedAppClientesIndexRoute,

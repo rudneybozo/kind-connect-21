@@ -21,6 +21,7 @@ O app roda no navegador (computador ou celular). Os dados ficam no **Supabase** 
 3. Espere o projeto ficar pronto (1–2 minutos).
 4. No menu da esquerda, abra **SQL Editor → New query**.
 5. Abra o arquivo [`supabase/schema.sql`](supabase/schema.sql) deste repositório, copie **tudo**, cole no editor e clique em **Run**. Deve aparecer "Success".
+   Depois faça o mesmo com [`supabase/02_historico_e_exclusoes.sql`](supabase/02_historico_e_exclusoes.sql) (histórico, exclusões e pós-venda).
    - Isso cria as tabelas, as 3 lojas e todas as regras de segurança.
    - Pode rodar de novo sem problema, porque o script não duplica nada.
 6. Em **Project Settings → API** (ou **Data API**), copie dois valores:
@@ -79,6 +80,15 @@ Use a raiz de um domínio ou subdomínio. Em subpasta (ex.: `site.com/crm`) o ap
 | **Clientes**         | Todos      | Lista, busca, ordenação e cadastro. O admin vê a loja e o vendedor de cada cliente.                                                 |
 | **Ficha do cliente** | Todos      | Dados, WhatsApp e mapa com um toque, visitas e contatos, vendas, editar e excluir.                                                  |
 | **Equipe e lojas**   | Só o admin | Liberar e bloquear usuários, trocar loja e papel, excluir (com opção de transferir os clientes), criar, renomear e desativar lojas. |
+
+| **Exclusões** | Só o admin | Aprovar ou recusar pedidos de exclusão dos vendedores. |
+| **Histórico** | Só o admin | Todas as ações (quem, quando, o quê), com hash de cada registro e o botão **Verificar Integridade da Cadeia**. |
+
+**Exclusão com aprovação.** Vendedor não exclui nada direto: toca na lixeira, escreve o motivo e o pedido vai para o administrador. O admin exclui na hora. Excluir é _lógico_: o registro some das telas, mas continua guardado no banco (`deleted_at`).
+
+**Pós-venda.** Por padrão fica para 3 dias depois da venda (e acompanha se a data da venda mudar). Se a pessoa escolher outra data, ela é mantida.
+
+**Histórico com cadeia de hashes.** Cada atividade é gravada pelo próprio banco (gatilhos), com o hash SHA-256 do registro anterior — como uma corrente. A tabela é somente inclusão (não aceita alteração nem remoção). O botão de verificação recalcula toda a corrente no navegador: verde = íntegra; vermelho = mostra o primeiro registro adulterado. Limite conhecido: apagar os _últimos_ registros não quebra a corrente; para isso, anote de tempos em tempos o hash mais recente.
 
 **Regras de segurança.** Ficam no banco de dados, então valem mesmo se alguém tentar burlar o site:
 

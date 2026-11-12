@@ -126,3 +126,40 @@ export function useAdminFilter() {
   const isAdmin = me.data?.role === "admin";
   return { ...ctx, isAdmin, effective: isAdmin ? ctx.filter : defaultFilter };
 }
+
+// ---------------------------------------------------------------------
+// Solicitações de exclusão pendentes de um cliente (chave "tipo:id")
+// ---------------------------------------------------------------------
+export type DeletableType = "client" | "interaction" | "sale";
+
+export function usePendingDeletions(clientId: string) {
+  return useQuery({
+    queryKey: ["pendingDeletions", clientId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("deletion_requests")
+        .select("entity_type, entity_id")
+        .eq("client_id", clientId)
+        .eq("status", "pending");
+      if (error) throw error;
+      return new Set((data || []).map((r) => `${r.entity_type}:${r.entity_id}`));
+    },
+  });
+}
+
+/** Quantidade de solicitações aguardando o administrador */
+export function usePendingDeletionCount(enabled: boolean) {
+  return useQuery({
+    queryKey: ["pendingDeletionCount"],
+    enabled,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("deletion_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
+}

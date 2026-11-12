@@ -9,10 +9,20 @@ import {
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, LayoutDashboard, LogOut, Menu, ShieldCheck, Clock, RefreshCw } from "lucide-react";
+import {
+  Users,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  ShieldCheck,
+  Clock,
+  RefreshCw,
+  Trash2,
+  History,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { FilterProvider, displayName, useMe, useStores } from "@/lib/crm";
+import { FilterProvider, displayName, useMe, useStores, usePendingDeletionCount } from "@/lib/crm";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async () => {
@@ -30,6 +40,7 @@ function AuthedLayout() {
   const [open, setOpen] = useState(false);
   const me = useMe();
   const stores = useStores();
+  const pendingCount = usePendingDeletionCount(me.data?.role === "admin" && me.data.active);
 
   // Se a sessão expirar ou o usuário sair em outra aba, volta para o login
   useEffect(() => {
@@ -87,8 +98,20 @@ function AuthedLayout() {
   const navItems = [
     { to: "/app", label: "Painel", icon: LayoutDashboard },
     { to: "/app/clientes", label: "Clientes", icon: Users },
-    ...(isAdmin ? [{ to: "/app/equipe", label: "Equipe e lojas", icon: ShieldCheck }] : []),
+    ...(isAdmin
+      ? [
+          { to: "/app/equipe", label: "Equipe", icon: ShieldCheck },
+          { to: "/app/exclusoes", label: "Exclusões", icon: Trash2 },
+          { to: "/app/historico", label: "Histórico", icon: History },
+        ]
+      : []),
   ] as const;
+  const badgeFor = (to: string) =>
+    to === "/app/exclusoes" && (pendingCount.data ?? 0) > 0 ? (
+      <span className="ml-1 rounded-full bg-destructive px-1.5 text-[11px] leading-5 text-destructive-foreground">
+        {pendingCount.data}
+      </span>
+    ) : null;
 
   const isActive = (to: string) =>
     location.pathname === to || (to !== "/app" && location.pathname.startsWith(to));
@@ -119,13 +142,14 @@ function AuthedLayout() {
                     }`}
                   >
                     <Icon className="h-4 w-4" /> {item.label}
+                    {badgeFor(item.to)}
                   </Link>
                 );
               })}
             </nav>
 
             <div className="flex items-center gap-2 min-w-0">
-              <div className="hidden md:block text-right min-w-0">
+              <div className="hidden xl:block text-right min-w-0">
                 <div className="text-sm font-medium truncate">{displayName(me.data)}</div>
                 <div className="text-xs text-muted-foreground truncate">
                   {isAdmin ? "Administrador" : "Vendedor"}
@@ -168,6 +192,7 @@ function AuthedLayout() {
                       className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-foreground hover:bg-accent"
                     >
                       <Icon className="h-4 w-4" /> {item.label}
+                      {badgeFor(item.to)}
                     </Link>
                   );
                 })}

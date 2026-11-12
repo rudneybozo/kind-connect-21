@@ -82,6 +82,8 @@ export type Database = {
           notes: string | null;
           created_at: string;
           updated_at: string;
+          deleted_at: string | null;
+          deleted_by: string | null;
         };
         Insert: {
           id?: string;
@@ -95,6 +97,8 @@ export type Database = {
           notes?: string | null;
           created_at?: string;
           updated_at?: string;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
         };
         Update: {
           id?: string;
@@ -108,6 +112,8 @@ export type Database = {
           notes?: string | null;
           created_at?: string;
           updated_at?: string;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
         };
         Relationships: [
           {
@@ -132,6 +138,8 @@ export type Database = {
           follow_up_done: boolean;
           created_at: string;
           updated_at: string;
+          deleted_at: string | null;
+          deleted_by: string | null;
         };
         Insert: {
           id?: string;
@@ -145,6 +153,8 @@ export type Database = {
           follow_up_done?: boolean;
           created_at?: string;
           updated_at?: string;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
         };
         Update: {
           id?: string;
@@ -158,6 +168,8 @@ export type Database = {
           follow_up_done?: boolean;
           created_at?: string;
           updated_at?: string;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
         };
         Relationships: [
           {
@@ -178,9 +190,12 @@ export type Database = {
           amount: number | null;
           description: string | null;
           post_sale_due_at: string;
+          post_sale_manual: boolean;
           post_sale_done_at: string | null;
           created_at: string;
           updated_at: string;
+          deleted_at: string | null;
+          deleted_by: string | null;
         };
         Insert: {
           id?: string;
@@ -190,9 +205,12 @@ export type Database = {
           amount?: number | null;
           description?: string | null;
           post_sale_due_at?: string;
+          post_sale_manual?: boolean;
           post_sale_done_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
         };
         Update: {
           id?: string;
@@ -202,13 +220,108 @@ export type Database = {
           amount?: number | null;
           description?: string | null;
           post_sale_due_at?: string;
+          post_sale_manual?: boolean;
           post_sale_done_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
         };
         Relationships: [
           {
             foreignKeyName: "sales_client_id_fkey";
+            columns: ["client_id"];
+            isOneToOne: false;
+            referencedRelation: "clients";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      activity_logs: {
+        Row: {
+          id: number;
+          user_id: string | null;
+          user_name: string;
+          action: string;
+          entity_type: string | null;
+          entity_id: string | null;
+          description: string;
+          created_at: string;
+          previous_hash: string;
+          current_hash: string;
+        };
+        Insert: {
+          id?: number;
+          user_id?: string | null;
+          user_name: string;
+          action: string;
+          entity_type?: string | null;
+          entity_id?: string | null;
+          description: string;
+          created_at: string;
+          previous_hash: string;
+          current_hash: string;
+        };
+        Update: {
+          id?: number;
+          user_id?: string | null;
+          user_name?: string;
+          action?: string;
+          entity_type?: string | null;
+          entity_id?: string | null;
+          description?: string;
+          created_at?: string;
+          previous_hash?: string;
+          current_hash?: string;
+        };
+        Relationships: [];
+      };
+      deletion_requests: {
+        Row: {
+          id: string;
+          entity_type: string;
+          entity_id: string;
+          client_id: string | null;
+          entity_label: string;
+          reason: string | null;
+          status: string;
+          requested_by: string;
+          requested_at: string;
+          decided_by: string | null;
+          decided_at: string | null;
+          decision_note: string | null;
+        };
+        Insert: {
+          id?: string;
+          entity_type: string;
+          entity_id: string;
+          client_id?: string | null;
+          entity_label: string;
+          reason?: string | null;
+          status?: string;
+          requested_by: string;
+          requested_at?: string;
+          decided_by?: string | null;
+          decided_at?: string | null;
+          decision_note?: string | null;
+        };
+        Update: {
+          id?: string;
+          entity_type?: string;
+          entity_id?: string;
+          client_id?: string | null;
+          entity_label?: string;
+          reason?: string | null;
+          status?: string;
+          requested_by?: string;
+          requested_at?: string;
+          decided_by?: string | null;
+          decided_at?: string | null;
+          decision_note?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "deletion_requests_client_id_fkey";
             columns: ["client_id"];
             isOneToOne: false;
             referencedRelation: "clients";
@@ -237,6 +350,18 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean };
       is_active_user: { Args: never; Returns: boolean };
       can_access_client: { Args: { p_client_id: string }; Returns: boolean };
+      request_deletion: {
+        Args: { p_entity_type: string; p_entity_id: string; p_reason?: string | null };
+        Returns: string;
+      };
+      approve_deletion: {
+        Args: { p_request_id: string; p_note?: string | null };
+        Returns: undefined;
+      };
+      reject_deletion: {
+        Args: { p_request_id: string; p_note?: string | null };
+        Returns: undefined;
+      };
     };
     Enums: {
       [_ in never]: never;
