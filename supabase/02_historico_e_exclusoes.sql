@@ -127,7 +127,7 @@ $$;
 
 -- Somente inclusão: nenhuma alteração ou remoção, nem pelo dono da tabela
 create or replace function public.activity_logs_block_changes()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = public as $$
 begin
   raise exception 'O Histórico de Atividades é somente inclusão: não é permitido alterar ou apagar registros';
 end;
