@@ -14,9 +14,11 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as RedefinirSenhaRouteImport } from './routes/redefinir-senha'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
+import { Route as AuthenticatedAppAlertasRouteImport } from './routes/_authenticated/app.alertas'
 import { Route as AuthenticatedAppEquipeRouteImport } from './routes/_authenticated/app.equipe'
 import { Route as AuthenticatedAppExclusoesRouteImport } from './routes/_authenticated/app.exclusoes'
 import { Route as AuthenticatedAppHistoricoRouteImport } from './routes/_authenticated/app.historico'
+import { Route as AuthenticatedAppRelatoriosRouteImport } from './routes/_authenticated/app.relatorios'
 import { Route as AuthenticatedAppClientesIndexRouteImport } from './routes/_authenticated/app.clientes.index'
 import { Route as AuthenticatedAppClientesIdRouteImport } from './routes/_authenticated/app.clientes.$id'
 
@@ -44,6 +46,11 @@ const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   path: '/app/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAppAlertasRoute = AuthenticatedAppAlertasRouteImport.update({
+  id: '/app/alertas',
+  path: '/app/alertas',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedAppEquipeRoute = AuthenticatedAppEquipeRouteImport.update({
   id: '/app/equipe',
   path: '/app/equipe',
@@ -59,6 +66,12 @@ const AuthenticatedAppHistoricoRoute =
   AuthenticatedAppHistoricoRouteImport.update({
     id: '/app/historico',
     path: '/app/historico',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAppRelatoriosRoute =
+  AuthenticatedAppRelatoriosRouteImport.update({
+    id: '/app/relatorios',
+    path: '/app/relatorios',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAppClientesIndexRoute =
@@ -78,9 +91,11 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/redefinir-senha': typeof RedefinirSenhaRoute
+  '/app/alertas': typeof AuthenticatedAppAlertasRoute
   '/app/equipe': typeof AuthenticatedAppEquipeRoute
   '/app/exclusoes': typeof AuthenticatedAppExclusoesRoute
   '/app/historico': typeof AuthenticatedAppHistoricoRoute
+  '/app/relatorios': typeof AuthenticatedAppRelatoriosRoute
   '/app/': typeof AuthenticatedAppIndexRoute
   '/app/clientes/$id': typeof AuthenticatedAppClientesIdRoute
   '/app/clientes/': typeof AuthenticatedAppClientesIndexRoute
@@ -89,9 +104,11 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/redefinir-senha': typeof RedefinirSenhaRoute
+  '/app/alertas': typeof AuthenticatedAppAlertasRoute
   '/app/equipe': typeof AuthenticatedAppEquipeRoute
   '/app/exclusoes': typeof AuthenticatedAppExclusoesRoute
   '/app/historico': typeof AuthenticatedAppHistoricoRoute
+  '/app/relatorios': typeof AuthenticatedAppRelatoriosRoute
   '/app': typeof AuthenticatedAppIndexRoute
   '/app/clientes/$id': typeof AuthenticatedAppClientesIdRoute
   '/app/clientes': typeof AuthenticatedAppClientesIndexRoute
@@ -102,9 +119,11 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/redefinir-senha': typeof RedefinirSenhaRoute
+  '/_authenticated/app/alertas': typeof AuthenticatedAppAlertasRoute
   '/_authenticated/app/equipe': typeof AuthenticatedAppEquipeRoute
   '/_authenticated/app/exclusoes': typeof AuthenticatedAppExclusoesRoute
   '/_authenticated/app/historico': typeof AuthenticatedAppHistoricoRoute
+  '/_authenticated/app/relatorios': typeof AuthenticatedAppRelatoriosRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/clientes/$id': typeof AuthenticatedAppClientesIdRoute
   '/_authenticated/app/clientes/': typeof AuthenticatedAppClientesIndexRoute
@@ -115,9 +134,11 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/redefinir-senha'
+    | '/app/alertas'
     | '/app/equipe'
     | '/app/exclusoes'
     | '/app/historico'
+    | '/app/relatorios'
     | '/app/'
     | '/app/clientes/$id'
     | '/app/clientes/'
@@ -126,9 +147,11 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/redefinir-senha'
+    | '/app/alertas'
     | '/app/equipe'
     | '/app/exclusoes'
     | '/app/historico'
+    | '/app/relatorios'
     | '/app'
     | '/app/clientes/$id'
     | '/app/clientes'
@@ -138,9 +161,11 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/redefinir-senha'
+    | '/_authenticated/app/alertas'
     | '/_authenticated/app/equipe'
     | '/_authenticated/app/exclusoes'
     | '/_authenticated/app/historico'
+    | '/_authenticated/app/relatorios'
     | '/_authenticated/app/'
     | '/_authenticated/app/clientes/$id'
     | '/_authenticated/app/clientes/'
@@ -190,6 +215,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/app/alertas': {
+      id: '/_authenticated/app/alertas'
+      path: '/app/alertas'
+      fullPath: '/app/alertas'
+      preLoaderRoute: typeof AuthenticatedAppAlertasRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/app/equipe': {
       id: '/_authenticated/app/equipe'
       path: '/app/equipe'
@@ -211,6 +243,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppHistoricoRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/app/relatorios': {
+      id: '/_authenticated/app/relatorios'
+      path: '/app/relatorios'
+      fullPath: '/app/relatorios'
+      preLoaderRoute: typeof AuthenticatedAppRelatoriosRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/app/clientes/': {
       id: '/_authenticated/app/clientes/'
       path: '/app/clientes'
@@ -229,18 +268,22 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAppAlertasRoute: typeof AuthenticatedAppAlertasRoute
   AuthenticatedAppEquipeRoute: typeof AuthenticatedAppEquipeRoute
   AuthenticatedAppExclusoesRoute: typeof AuthenticatedAppExclusoesRoute
   AuthenticatedAppHistoricoRoute: typeof AuthenticatedAppHistoricoRoute
+  AuthenticatedAppRelatoriosRoute: typeof AuthenticatedAppRelatoriosRoute
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
   AuthenticatedAppClientesIdRoute: typeof AuthenticatedAppClientesIdRoute
   AuthenticatedAppClientesIndexRoute: typeof AuthenticatedAppClientesIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAppAlertasRoute: AuthenticatedAppAlertasRoute,
   AuthenticatedAppEquipeRoute: AuthenticatedAppEquipeRoute,
   AuthenticatedAppExclusoesRoute: AuthenticatedAppExclusoesRoute,
   AuthenticatedAppHistoricoRoute: AuthenticatedAppHistoricoRoute,
+  AuthenticatedAppRelatoriosRoute: AuthenticatedAppRelatoriosRoute,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
   AuthenticatedAppClientesIdRoute: AuthenticatedAppClientesIdRoute,
   AuthenticatedAppClientesIndexRoute: AuthenticatedAppClientesIndexRoute,

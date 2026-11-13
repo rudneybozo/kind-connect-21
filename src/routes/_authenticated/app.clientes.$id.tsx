@@ -22,12 +22,27 @@ import {
   Store as StoreIcon,
   User,
   Hourglass,
+  IdCard,
+  Receipt,
+  HandCoins,
 } from "lucide-react";
 import { ClientFormDialog } from "@/components/crm/ClientFormDialog";
 import { InteractionDialog } from "@/components/crm/InteractionDialog";
 import { SaleDialog } from "@/components/crm/SaleDialog";
+import { SettleDialog } from "@/components/crm/SettleDialog";
 import { DeleteRequestDialog } from "@/components/crm/DeleteRequestDialog";
-import { formatBRL, useLookups, useMe, usePendingDeletions, type DeletableType } from "@/lib/crm";
+import { AttendanceWarning, type AttendanceInfo } from "@/components/crm/AttendanceWarning";
+import {
+  checkAttendance,
+  formatBRL,
+  paymentLabel,
+  useClientCard,
+  useLookups,
+  useMe,
+  usePendingDeletions,
+  type DeletableType,
+} from "@/lib/crm";
+import { formatDocument } from "@/lib/documents";
 import { fmtDate, fmtDateTime } from "@/lib/datetime";
 import { toast } from "sonner";
 import type { Tables } from "@/integrations/supabase/types";
@@ -50,6 +65,7 @@ function whatsappLink(phone: string) {
 }
 
 type DeleteTarget = { type: DeletableType; id: string; label: string } | null;
+type Pending = { kind: "interaction" | "sale"; info: AttendanceInfo } | null;
 
 function PendingBadge() {
   return (
@@ -64,7 +80,8 @@ function ClientDetail() {
   const { id } = Route.useParams();
   const router = useRouter();
   const me = useMe();
-  const { storeName, personName } = useLookups();
+  const { personName } = useLookups();
+  const card = useClientCard(id);
   const pending = usePendingDeletions(id);
   const isAdmin = me.data?.role === "admin";
 
@@ -80,16 +97,13 @@ function ClientDetail() {
     open: false,
     item: null,
   });
+  const [settleSale, setSettleSale] = useState<Tables<"sales"> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
+  const [warning, setWarning] = useState<Pending>(null);
+  const [conflictReason, setConflictReason] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
 
-  const client = useQuery({
-    queryKey: ["client", id],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("clients").select("*").eq("id", id).maybeSingle();
-      if (error) throw error;
-      return data;
-    },
-  });
+  // Cada vendedor recebe só os próprios registros (o banco filtra); o admin recebe todos
   const interactions = useQuery({
     queryKey: ["interactions", id],
     queryFn: async () => {
@@ -118,6 +132,32 @@ function ClientDetail() {
   const isPending = (type: DeletableType, entityId: string) =>
     pending.data?.has(`${type}:${entityId}`) ?? false;
 
+  /** Antes de um novo contato/venda: outro vendedor atendeu nos últimos 60 dias? */
+  async function startNew(kind: "interaction" | "sale") {
+    setConflictReason(null);
+    if (isAdmin) return openNew(kind);
+    setChecking(true);
+    try {
+      const info = await checkAttendance(id);
+      if (info) setWarning({ kind, info });
+      else openNew(kind);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível verificar o atendimento");
+    } finally {
+      setChecking(false);
+    }
+  }
+  function openNew(kind: "interaction" | "sale") {
+    if (kind === "interaction") setInteractionDialog({ open: true, item: null });
+    else setSaleDialog({ open: true, item: null });
+  }
+
+  function refreshAll() {
+    interactions.refetch();
+    sales.refetch();
+    card.refetch();
+  }
+
   async function toggleFollowUp(interactionId: string, done: boolean) {
     const { error } = await supabase
       .from("interactions")
@@ -136,24 +176,28 @@ function ClientDetail() {
     sales.refetch();
   }
 
-  if (client.isLoading) return <p className="text-sm text-muted-foreground">Carregando…</p>;
-  if (client.error)
-    return <p className="text-sm text-destructive">Erro ao carregar: {client.error.message}</p>;
-  if (!client.data)
+  if (card.isLoading) return <p className="text-sm text-muted-foreground">Carregando…</p>;
+  if (card.error)
+    return <p className="text-sm text-destructive">Erro ao carregar: {card.error.message}</p>;
+  if (!card.data)
     return (
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Cliente não encontrado, excluído ou sem permissão de acesso.
-        </p>
+        <p className="text-sm text-muted-foreground">Cliente não encontrado ou excluído.</p>
         <Button asChild variant="outline" size="sm">
           <Link to="/app/clientes">Voltar para clientes</Link>
         </Button>
       </div>
     );
 
-  const c = client.data;
+  const c = card.data;
+  const canEdit = c.can_edit;
   const wa = c.phone ? whatsappLink(c.phone) : null;
-  const totalSold = (sales.data || []).reduce((sum, s) => sum + Number(s.amount ?? 0), 0);
+  const totalSold = (sales.data || [])
+    .filter((s) => s.payment_method !== "pendencia")
+    .reduce((sum, s) => sum + Number(s.amount ?? 0), 0);
+  const openPending = (sales.data || []).filter(
+    (s) => s.payment_method === "pendencia" && !s.settled_at,
+  );
   const clientPending = isPending("client", c.id);
 
   return (
@@ -169,13 +213,32 @@ function ClientDetail() {
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:flex sm:flex-wrap sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold truncate">{c.name}</h1>
-          {c.company && (
+          {c.legal_name && c.legal_name !== c.name && (
             <p className="text-sm text-muted-foreground truncate flex items-center gap-1">
               <Building2 className="h-3 w-3" />
-              {c.company}
+              {c.legal_name}
             </p>
           )}
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground mt-2">
+            {c.document ? (
+              <span className="inline-flex items-center gap-1">
+                <IdCard className="h-3 w-3" />
+                {c.person_type === "pj" ? "CNPJ" : "CPF"}{" "}
+                {formatDocument(c.document, c.person_type)}
+              </span>
+            ) : (
+              c.person_type === "pj" && (
+                <Badge variant="outline" className="border-amber-500 text-amber-700 font-normal">
+                  Sem CNPJ
+                </Badge>
+              )
+            )}
+            {c.contact_person && (
+              <span className="inline-flex items-center gap-1">
+                <User className="h-3 w-3" />
+                Contato: {c.contact_person}
+              </span>
+            )}
             {c.phone && (
               <a href={`tel:${c.phone}`} className="inline-flex items-center gap-1 hover:underline">
                 <Phone className="h-3 w-3" />
@@ -217,42 +280,44 @@ function ClientDetail() {
           <div className="flex flex-wrap gap-1 mt-2">
             <Badge variant="outline" className="font-normal">
               <StoreIcon className="h-3 w-3 mr-1" />
-              {storeName(c.store_id)}
+              Cadastrado por {c.origin_name} · {c.origin_store}
             </Badge>
-            {isAdmin && (
-              <Badge variant="outline" className="font-normal">
-                <User className="h-3 w-3 mr-1" />
-                {personName(c.user_id)}
-              </Badge>
-            )}
             {totalSold > 0 && (
               <Badge variant="outline" className="font-normal text-emerald-700">
                 <DollarSign className="h-3 w-3 mr-1" />
-                {formatBRL(totalSold)} em vendas
+                {formatBRL(totalSold)} em vendas{isAdmin ? "" : " (suas)"}
+              </Badge>
+            )}
+            {openPending.length > 0 && (
+              <Badge variant="outline" className="font-normal border-orange-500 text-orange-700">
+                <HandCoins className="h-3 w-3 mr-1" />
+                {openPending.length} pendência(s) em aberto
               </Badge>
             )}
             {clientPending && <PendingBadge />}
           </div>
         </div>
-        <div className="flex shrink-0">
-          <Button variant="ghost" size="sm" onClick={() => setEditOpen(true)} aria-label="Editar">
-            <Pencil className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">Editar</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive"
-            aria-label="Excluir"
-            disabled={clientPending}
-            onClick={() =>
-              setDeleteTarget({ type: "client", id: c.id, label: `o cliente "${c.name}"` })
-            }
-          >
-            <Trash2 className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">{clientPending ? "Aguardando" : "Excluir"}</span>
-          </Button>
-        </div>
+        {canEdit && (
+          <div className="flex shrink-0">
+            <Button variant="ghost" size="sm" onClick={() => setEditOpen(true)} aria-label="Editar">
+              <Pencil className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Editar</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              aria-label="Excluir"
+              disabled={clientPending}
+              onClick={() =>
+                setDeleteTarget({ type: "client", id: c.id, label: `o cliente "${c.name}"` })
+              }
+            >
+              <Trash2 className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">{clientPending ? "Aguardando" : "Excluir"}</span>
+            </Button>
+          </div>
+        )}
       </div>
 
       {c.notes && (
@@ -269,12 +334,15 @@ function ClientDetail() {
         <CardHeader className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
           <div className="min-w-0">
             <CardTitle className="text-lg">Visitas e contatos</CardTitle>
-            <CardDescription>Registre cada visita, ligação ou reunião</CardDescription>
+            <CardDescription>
+              {isAdmin ? "Registros de todos os vendedores" : "Seus registros com este cliente"}
+            </CardDescription>
           </div>
           <Button
             size="sm"
             className="shrink-0"
-            onClick={() => setInteractionDialog({ open: true, item: null })}
+            onClick={() => startNew("interaction")}
+            disabled={checking}
           >
             <Plus className="h-4 w-4 mr-1" /> Novo
           </Button>
@@ -286,6 +354,7 @@ function ClientDetail() {
           {interactions.data?.map((i) => {
             const itemPending = isPending("interaction", i.id);
             const label = `a ${(TYPE_LABEL[i.type] ?? "contato").toLowerCase()} de ${fmtDateTime(i.happened_at)}`;
+            const mine = i.user_id === me.data?.id;
             return (
               <div key={i.id} className="border rounded-lg p-3 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -296,24 +365,29 @@ function ClientDetail() {
                       com {i.contact_person}
                     </span>
                   )}
+                  {isAdmin && (
+                    <span className="text-xs text-muted-foreground">· {personName(i.user_id)}</span>
+                  )}
                   {itemPending && <PendingBadge />}
-                  <div className="ml-auto flex items-center gap-1">
-                    <button
-                      onClick={() => setInteractionDialog({ open: true, item: i })}
-                      className="p-1 text-muted-foreground hover:text-foreground"
-                      aria-label="Editar registro"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => setDeleteTarget({ type: "interaction", id: i.id, label })}
-                      disabled={itemPending}
-                      className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-40"
-                      aria-label="Excluir registro"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
+                  {(mine || isAdmin) && (
+                    <div className="ml-auto flex items-center gap-1">
+                      <button
+                        onClick={() => setInteractionDialog({ open: true, item: i })}
+                        className="p-1 text-muted-foreground hover:text-foreground"
+                        aria-label="Editar registro"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget({ type: "interaction", id: i.id, label })}
+                        disabled={itemPending}
+                        className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-40"
+                        aria-label="Excluir registro"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {i.notes && (
                   <p className="text-sm text-muted-foreground whitespace-pre-wrap">{i.notes}</p>
@@ -347,14 +421,15 @@ function ClientDetail() {
           <div className="min-w-0">
             <CardTitle className="text-lg">Vendas</CardTitle>
             <CardDescription>
-              Registre quando vender. O pós-venda é lembrado em 3 dias, ou na data que você
-              escolher.
+              {isAdmin ? "Vendas de todos os vendedores." : "Suas vendas para este cliente."}{" "}
+              Pendências são quitadas com NF.
             </CardDescription>
           </div>
           <Button
             size="sm"
             className="shrink-0 bg-emerald-600 hover:bg-emerald-700"
-            onClick={() => setSaleDialog({ open: true, item: null })}
+            onClick={() => startNew("sale")}
+            disabled={checking}
           >
             <DollarSign className="h-4 w-4 mr-1" /> Vendi
           </Button>
@@ -366,71 +441,130 @@ function ClientDetail() {
           {sales.data?.map((s) => {
             const itemPending = isPending("sale", s.id);
             const label = `a venda de ${formatBRL(s.amount) || "valor não informado"} (${fmtDate(s.sold_at)})`;
+            const mine = s.user_id === me.data?.id;
+            const isPend = s.payment_method === "pendencia";
+            const isSettlement = Boolean(s.settles_sale_id);
             return (
-              <div key={s.id} className="border rounded-lg p-3 space-y-1">
+              <div
+                key={s.id}
+                className={`border rounded-lg p-3 space-y-1 ${isPend && !s.settled_at ? "border-orange-300" : ""}`}
+              >
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge className="bg-emerald-600 hover:bg-emerald-600">
-                    <DollarSign className="h-3 w-3 mr-1" />
-                    Venda
-                  </Badge>
+                  {isPend ? (
+                    <Badge
+                      className={
+                        s.settled_at
+                          ? "bg-slate-400 hover:bg-slate-400"
+                          : "bg-orange-500 hover:bg-orange-500"
+                      }
+                    >
+                      <HandCoins className="h-3 w-3 mr-1" />
+                      {s.settled_at ? "Pendência quitada" : "Pendência"}
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-emerald-600 hover:bg-emerald-600">
+                      <DollarSign className="h-3 w-3 mr-1" />
+                      {isSettlement ? "Quitação" : "Venda"}
+                    </Badge>
+                  )}
                   <span className="text-sm font-medium">{fmtDate(s.sold_at)}</span>
                   {s.amount != null && <span className="text-sm">{formatBRL(s.amount)}</span>}
+                  <Badge variant="outline" className="font-normal">
+                    {paymentLabel(s.payment_method)}
+                  </Badge>
+                  {s.nf_number && (
+                    <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <Receipt className="h-3 w-3" />
+                      NF {s.nf_number}
+                      {s.nf_date && ` de ${fmtDate(s.nf_date + "T12:00:00")}`}
+                    </span>
+                  )}
+                  {isAdmin && (
+                    <span className="text-xs text-muted-foreground">· {personName(s.user_id)}</span>
+                  )}
                   {itemPending && <PendingBadge />}
-                  <div className="ml-auto flex items-center gap-1">
-                    <button
-                      onClick={() => setSaleDialog({ open: true, item: s })}
-                      className="p-1 text-muted-foreground hover:text-foreground"
-                      aria-label="Editar venda"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => setDeleteTarget({ type: "sale", id: s.id, label })}
-                      disabled={itemPending}
-                      className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-40"
-                      aria-label="Excluir venda"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
+                  {(mine || isAdmin) && (
+                    <div className="ml-auto flex items-center gap-1">
+                      {isPend && !s.settled_at && (
+                        <Button
+                          size="sm"
+                          className="h-7 bg-emerald-600 hover:bg-emerald-700"
+                          onClick={() => setSettleSale(s)}
+                        >
+                          Quitar
+                        </Button>
+                      )}
+                      <button
+                        onClick={() => setSaleDialog({ open: true, item: s })}
+                        className="p-1 text-muted-foreground hover:text-foreground"
+                        aria-label="Editar venda"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget({ type: "sale", id: s.id, label })}
+                        disabled={itemPending}
+                        className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-40"
+                        aria-label="Excluir venda"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {s.description && (
                   <p className="text-sm text-muted-foreground whitespace-pre-wrap">
                     {s.description}
                   </p>
                 )}
-                <div className="flex items-center gap-2 pt-1">
-                  <CalendarClock className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-xs">
-                    Pós-venda em <strong>{fmtDateTime(s.post_sale_due_at)}</strong>
-                    <span className="text-muted-foreground">
-                      {" "}
-                      ({s.post_sale_manual ? "data escolhida" : "automático"})
+                {!isSettlement && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs">
+                      Pós-venda em <strong>{fmtDateTime(s.post_sale_due_at)}</strong>
+                      <span className="text-muted-foreground">
+                        {" "}
+                        ({s.post_sale_manual ? "data escolhida" : "automático"})
+                      </span>
                     </span>
-                  </span>
-                  <Button
-                    size="sm"
-                    variant={s.post_sale_done_at ? "secondary" : "outline"}
-                    className="ml-auto h-7"
-                    onClick={() => togglePostSale(s.id, !s.post_sale_done_at)}
-                  >
-                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                    {s.post_sale_done_at ? "Feito" : "Marcar feito"}
-                  </Button>
-                </div>
+                    <Button
+                      size="sm"
+                      variant={s.post_sale_done_at ? "secondary" : "outline"}
+                      className="ml-auto h-7"
+                      onClick={() => togglePostSale(s.id, !s.post_sale_done_at)}
+                    >
+                      <CheckCircle2 className="h-3 w-3 mr-1" />
+                      {s.post_sale_done_at ? "Feito" : "Marcar feito"}
+                    </Button>
+                  </div>
+                )}
               </div>
             );
           })}
         </CardContent>
       </Card>
 
-      <ClientFormDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        client={c}
-        onSaved={() => {
-          setEditOpen(false);
-          client.refetch();
+      {canEdit && (
+        <ClientFormDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          client={c}
+          onSaved={() => {
+            setEditOpen(false);
+            card.refetch();
+          }}
+        />
+      )}
+      <AttendanceWarning
+        info={warning?.info ?? null}
+        action={warning?.kind === "sale" ? "venda" : "contato"}
+        open={Boolean(warning)}
+        onCancel={() => setWarning(null)}
+        onConfirm={(reason) => {
+          const kind = warning!.kind;
+          setConflictReason(reason);
+          setWarning(null);
+          openNew(kind);
         }}
       />
       <InteractionDialog
@@ -438,14 +572,22 @@ function ClientDetail() {
         interaction={interactionDialog.item}
         open={interactionDialog.open}
         onOpenChange={(open) => setInteractionDialog((s) => ({ ...s, open }))}
-        onSaved={() => interactions.refetch()}
+        onSaved={refreshAll}
+        conflictReason={conflictReason}
       />
       <SaleDialog
         clientId={id}
         sale={saleDialog.item}
         open={saleDialog.open}
         onOpenChange={(open) => setSaleDialog((s) => ({ ...s, open }))}
-        onSaved={() => sales.refetch()}
+        onSaved={refreshAll}
+        conflictReason={conflictReason}
+      />
+      <SettleDialog
+        sale={settleSale}
+        open={Boolean(settleSale)}
+        onOpenChange={(open) => !open && setSettleSale(null)}
+        onSettled={() => sales.refetch()}
       />
       {deleteTarget && (
         <DeleteRequestDialog

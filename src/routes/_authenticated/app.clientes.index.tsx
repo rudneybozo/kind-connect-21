@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -19,19 +19,34 @@ import {
   ChevronRight,
   Building2,
   Phone,
-  Mail,
   Store as StoreIcon,
   User,
+  IdCard,
+  Users,
 } from "lucide-react";
 import { FilterBar } from "@/components/crm/FilterBar";
 import { ClientFormDialog } from "@/components/crm/ClientFormDialog";
 import { useAdminFilter, useLookups } from "@/lib/crm";
+import { formatDocument, onlyDigits } from "@/lib/documents";
 
 export const Route = createFileRoute("/_authenticated/app/clientes/")({
   component: ClientsPage,
 });
 
 type Sort = "recent" | "name";
+
+function normalize(s: string | null | undefined) {
+  return (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+function useDebounced<T>(value: T, ms: number) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
 
 function ClientsPage() {
   const router = useRouter();
@@ -40,13 +55,17 @@ function ClientsPage() {
   const [open, setOpen] = useState(false);
   const { effective, isAdmin } = useAdminFilter();
   const { storeName, personName } = useLookups();
+  const debounced = useDebounced(q.trim(), 350);
 
+  // Vendedor: clientes que cadastrou ou já atendeu. Admin: todos.
   const clients = useQuery({
     queryKey: ["clients", effective],
     queryFn: async () => {
       let query = supabase
         .from("clients")
-        .select("id, name, company, phone, email, user_id, store_id, created_at")
+        .select(
+          "id, name, legal_name, person_type, document, contact_person, phone, user_id, store_id, created_at",
+        )
         .order("created_at", { ascending: false });
       if (effective.storeId !== "all") query = query.eq("store_id", effective.storeId);
       if (effective.sellerId !== "all") query = query.eq("user_id", effective.sellerId);
@@ -56,13 +75,29 @@ function ClientsPage() {
     },
   });
 
+  // Base do grupo (para o vendedor achar clientes que ainda não atende)
+  const base = useQuery({
+    queryKey: ["clientSearch", debounced],
+    enabled: !isAdmin && debounced.length >= 2,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("search_clients", {
+        p_query: debounced,
+        p_limit: 30,
+      });
+      if (error) throw error;
+      return (data ?? []).filter((r) => !r.is_mine);
+    },
+  });
+
   const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
+    const s = normalize(q.trim());
+    const sd = onlyDigits(q);
     const list = (clients.data || []).filter((c) => {
       if (!s) return true;
-      return [c.name, c.company, c.phone, c.email]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(s));
+      return (
+        [c.name, c.legal_name, c.contact_person].some((v) => normalize(v).includes(s)) ||
+        (sd.length >= 3 && [c.document, onlyDigits(c.phone)].some((v) => (v ?? "").includes(sd)))
+      );
     });
     if (sort === "name") list.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
     return list;
@@ -74,7 +109,11 @@ function ClientsPage() {
         <div className="min-w-0">
           <h1 className="text-2xl font-bold truncate">Clientes</h1>
           <p className="text-sm text-muted-foreground">
-            {clients.isLoading ? "Carregando…" : `${clients.data?.length ?? 0} cadastrados`}
+            {clients.isLoading
+              ? "Carregando…"
+              : isAdmin
+                ? `${clients.data?.length ?? 0} na base`
+                : `${clients.data?.length ?? 0} que você cadastrou ou atende`}
           </p>
         </div>
         <Button size="sm" className="shrink-0" onClick={() => setOpen(true)}>
@@ -90,7 +129,11 @@ function ClientsPage() {
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar por nome, empresa, telefone ou email"
+            placeholder={
+              isAdmin
+                ? "Buscar por nome, CNPJ/CPF ou telefone"
+                : "Buscar na base do grupo: nome, CNPJ/CPF ou telefone"
+            }
             className="pl-9"
           />
         </div>
@@ -113,16 +156,22 @@ function ClientsPage() {
         </Card>
       )}
 
-      {!clients.isLoading && !clients.error && filtered.length === 0 && (
-        <Card>
-          <CardContent className="p-8 text-center text-sm text-muted-foreground">
-            {clients.data?.length === 0
-              ? "Nenhum cliente aqui ainda. Toque em “Novo cliente” para começar."
-              : "Nenhum cliente encontrado."}
-          </CardContent>
-        </Card>
-      )}
+      {!clients.isLoading &&
+        !clients.error &&
+        filtered.length === 0 &&
+        !(base.data && base.data.length > 0) && (
+          <Card>
+            <CardContent className="p-8 text-center text-sm text-muted-foreground">
+              {clients.data?.length === 0 && !q
+                ? "Nenhum cliente aqui ainda. Toque em “Novo cliente” para começar."
+                : "Nenhum cliente encontrado."}
+            </CardContent>
+          </Card>
+        )}
 
+      {!isAdmin && filtered.length > 0 && q && (
+        <h2 className="text-sm font-semibold text-muted-foreground">Seus clientes</h2>
+      )}
       <div className="grid sm:grid-cols-2 gap-3">
         {filtered.map((c) => (
           <Link key={c.id} to="/app/clientes/$id" params={{ id: c.id }} className="group block">
@@ -130,23 +179,31 @@ function ClientsPage() {
               <CardContent className="p-4 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
                 <div className="min-w-0">
                   <div className="font-semibold truncate">{c.name}</div>
-                  {c.company && (
+                  {c.legal_name && c.legal_name !== c.name && (
                     <div className="text-xs text-muted-foreground truncate flex items-center gap-1">
                       <Building2 className="h-3 w-3" />
-                      {c.company}
+                      {c.legal_name}
                     </div>
                   )}
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-1">
+                    {c.document ? (
+                      <span className="inline-flex items-center gap-1">
+                        <IdCard className="h-3 w-3" />
+                        {formatDocument(c.document, c.person_type)}
+                      </span>
+                    ) : (
+                      c.person_type === "pj" && <span className="text-amber-700">sem CNPJ</span>
+                    )}
                     {c.phone && (
                       <span className="inline-flex items-center gap-1">
                         <Phone className="h-3 w-3" />
                         {c.phone}
                       </span>
                     )}
-                    {c.email && (
-                      <span className="inline-flex items-center gap-1 truncate">
-                        <Mail className="h-3 w-3" />
-                        {c.email}
+                    {c.contact_person && (
+                      <span className="inline-flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {c.contact_person}
                       </span>
                     )}
                   </div>
@@ -169,6 +226,45 @@ function ClientsPage() {
           </Link>
         ))}
       </div>
+
+      {!isAdmin && base.data && base.data.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+            <Users className="h-4 w-4" /> Na base do grupo
+          </h2>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {base.data.map((c) => (
+              <Link key={c.id} to="/app/clientes/$id" params={{ id: c.id }} className="group block">
+                <Card className="border-dashed hover:border-primary/50 transition-colors h-full">
+                  <CardContent className="p-4 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold truncate">{c.name}</div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-1">
+                        {c.document && (
+                          <span className="inline-flex items-center gap-1">
+                            <IdCard className="h-3 w-3" />
+                            {formatDocument(c.document, c.person_type)}
+                          </span>
+                        )}
+                        {c.phone && (
+                          <span className="inline-flex items-center gap-1">
+                            <Phone className="h-3 w-3" />
+                            {c.phone}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mt-1">
+                        Cadastrado por {c.origin_name} · {c.origin_store}
+                      </div>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0 group-hover:text-foreground" />
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <ClientFormDialog
         open={open}

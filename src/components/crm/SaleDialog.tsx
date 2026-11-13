@@ -6,6 +6,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -14,7 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { parseBRL } from "@/lib/crm";
+import { PAYMENT_METHODS, parseBRL } from "@/lib/crm";
 import { POST_SALE_DAYS, addDays, fmtDateTime, toLocalInput } from "@/lib/datetime";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -24,6 +31,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
+  conflictReason?: string | null; // motivo informado no aviso de atendimento (60 dias)
 };
 
 function amountToInput(v: number | null) {
@@ -31,13 +39,21 @@ function amountToInput(v: number | null) {
 }
 
 /**
- * Registrar ou editar uma venda.
- * Pós-venda automático = data da venda + 3 dias (calculado também no banco).
- * Se o usuário escolher a data, ela é mantida mesmo que a data da venda mude.
+ * Registrar ou editar uma venda externa.
+ * - Forma de pagamento obrigatória; NF opcional.
+ * - Pendência não muda de forma de pagamento aqui: usa-se "Quitar" (com NF).
+ * - Pós-venda automático = data da venda + 3 dias; data escolhida é mantida.
  */
-export function SaleDialog({ clientId, sale, open, onOpenChange, onSaved }: Props) {
+export function SaleDialog({ clientId, sale, open, onOpenChange, onSaved, conflictReason }: Props) {
   const editing = Boolean(sale);
-  const [form, setForm] = useState({ sold_at: toLocalInput(), amount: "", description: "" });
+  const [form, setForm] = useState({
+    sold_at: toLocalInput(),
+    amount: "",
+    description: "",
+    nf_number: "",
+    nf_date: "",
+  });
+  const [method, setMethod] = useState("");
   const [autoPostSale, setAutoPostSale] = useState(true);
   const [postSaleAt, setPostSaleAt] = useState("");
   const [saving, setSaving] = useState(false);
@@ -49,16 +65,26 @@ export function SaleDialog({ clientId, sale, open, onOpenChange, onSaved }: Prop
         sold_at: toLocalInput(sale.sold_at),
         amount: amountToInput(sale.amount),
         description: sale.description ?? "",
+        nf_number: sale.nf_number ?? "",
+        nf_date: sale.nf_date ?? "",
       });
+      setMethod(sale.payment_method ?? "");
       setAutoPostSale(!sale.post_sale_manual);
       setPostSaleAt(toLocalInput(sale.post_sale_due_at));
     } else {
-      setForm({ sold_at: toLocalInput(), amount: "", description: "" });
+      setForm({ sold_at: toLocalInput(), amount: "", description: "", nf_number: "", nf_date: "" });
+      setMethod("");
       setAutoPostSale(true);
       setPostSaleAt("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, sale?.id]);
+
+  const isPendingSale = sale?.payment_method === "pendencia";
+  const isSettled = Boolean(sale?.settled_at);
+  const isSettlement = Boolean(sale?.settles_sale_id);
+  const methodLocked = isPendingSale || isSettled;
+  const methodOptions = PAYMENT_METHODS.filter((m) => !(isSettlement && m.value === "pendencia"));
 
   const soldAtDate = form.sold_at ? new Date(form.sold_at) : null;
   const autoDate =
@@ -73,9 +99,11 @@ export function SaleDialog({ clientId, sale, open, onOpenChange, onSaved }: Prop
     e.preventDefault();
     if (!soldAtDate || Number.isNaN(soldAtDate.getTime()))
       return toast.error("Informe a data da venda");
+    if (!method) return toast.error("Escolha a forma de pagamento");
     const amountNum = form.amount ? parseBRL(form.amount) : null;
     if (form.amount && (amountNum === null || Number.isNaN(amountNum) || amountNum < 0))
       return toast.error("Valor inválido");
+    if (method === "pendencia" && !amountNum) return toast.error("Informe o valor da pendência");
     if (form.description.length > 2000) return toast.error("Descrição muito longa");
     if (!autoPostSale && !postSaleAt) return toast.error("Escolha a data do pós-venda");
 
@@ -84,8 +112,11 @@ export function SaleDialog({ clientId, sale, open, onOpenChange, onSaved }: Prop
       sold_at: soldAtDate.toISOString(),
       amount: amountNum,
       description: form.description.trim() || null,
+      nf_number: form.nf_number.trim() || null,
+      nf_date: form.nf_date || null,
       post_sale_manual: !autoPostSale,
       post_sale_due_at: postSaleDue.toISOString(),
+      ...(methodLocked ? {} : { payment_method: method }),
     };
 
     setSaving(true);
@@ -98,14 +129,22 @@ export function SaleDialog({ clientId, sale, open, onOpenChange, onSaved }: Prop
         setSaving(false);
         return toast.error("Sessão expirada");
       }
-      ({ error } = await supabase
-        .from("sales")
-        .insert({ ...values, user_id: userData.user.id, client_id: clientId }));
+      ({ error } = await supabase.from("sales").insert({
+        ...values,
+        payment_method: method,
+        user_id: userData.user.id,
+        client_id: clientId,
+        conflict_reason: conflictReason ?? null,
+      }));
     }
     setSaving(false);
     if (error) return toast.error("Não foi possível salvar: " + error.message);
     toast.success(
-      editing ? "Venda atualizada" : `Venda registrada — pós-venda em ${fmtDateTime(postSaleDue)}`,
+      editing
+        ? "Venda atualizada"
+        : method === "pendencia"
+          ? "Pendência registrada"
+          : `Venda registrada — pós-venda em ${fmtDateTime(postSaleDue)}`,
     );
     onOpenChange(false);
     onSaved();
@@ -135,16 +174,66 @@ export function SaleDialog({ clientId, sale, open, onOpenChange, onSaved }: Prop
               />
             </div>
             <div>
-              <Label htmlFor="amount">Valor (R$)</Label>
+              <Label htmlFor="amount">Valor (R$){method === "pendencia" ? " *" : ""}</Label>
               <Input
                 id="amount"
                 inputMode="decimal"
                 value={form.amount}
                 onChange={(e) => setForm({ ...form, amount: e.target.value })}
                 placeholder="0,00"
+                disabled={isSettled}
               />
             </div>
           </div>
+
+          <div>
+            <Label>Forma de pagamento *</Label>
+            <Select value={method} onValueChange={setMethod} disabled={methodLocked}>
+              <SelectTrigger aria-label="Forma de pagamento">
+                <SelectValue placeholder="Escolha" />
+              </SelectTrigger>
+              <SelectContent>
+                {methodOptions.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.value === "pendencia" ? "Pendência (a receber)" : m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {isPendingSale && !isSettled && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Para registrar o pagamento, use o botão “Quitar” na venda.
+              </p>
+            )}
+            {method === "pendencia" && !editing && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Pendências não entram no total de vendas até serem quitadas (com NF).
+              </p>
+            )}
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="nf">Número da NF</Label>
+              <Input
+                id="nf"
+                value={form.nf_number}
+                onChange={(e) => setForm({ ...form, nf_number: e.target.value })}
+                maxLength={40}
+                placeholder="Opcional"
+              />
+            </div>
+            <div>
+              <Label htmlFor="nf-date">Data da NF</Label>
+              <Input
+                id="nf-date"
+                type="date"
+                value={form.nf_date}
+                onChange={(e) => setForm({ ...form, nf_date: e.target.value })}
+              />
+            </div>
+          </div>
+
           <div>
             <Label htmlFor="desc">Descrição</Label>
             <Textarea
@@ -157,33 +246,35 @@ export function SaleDialog({ clientId, sale, open, onOpenChange, onSaved }: Prop
             />
           </div>
 
-          <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor="auto-ps" className="text-sm">
-                Pós-venda automático ({POST_SALE_DAYS} dias após a venda)
-              </Label>
-              <Switch id="auto-ps" checked={autoPostSale} onCheckedChange={toggleAuto} />
-            </div>
-            {autoPostSale ? (
-              <p className="text-xs text-muted-foreground">
-                {autoDate ? `Pós-venda em ${fmtDateTime(autoDate)}.` : "Informe a data da venda."}
-              </p>
-            ) : (
-              <div>
-                <Label htmlFor="ps-date">Data do pós-venda *</Label>
-                <Input
-                  id="ps-date"
-                  type="datetime-local"
-                  value={postSaleAt}
-                  onChange={(e) => setPostSaleAt(e.target.value)}
-                  required
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Esta data é mantida mesmo se a data da venda mudar.
-                </p>
+          {!isSettlement && (
+            <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="auto-ps" className="text-sm">
+                  Pós-venda automático ({POST_SALE_DAYS} dias após a venda)
+                </Label>
+                <Switch id="auto-ps" checked={autoPostSale} onCheckedChange={toggleAuto} />
               </div>
-            )}
-          </div>
+              {autoPostSale ? (
+                <p className="text-xs text-muted-foreground">
+                  {autoDate ? `Pós-venda em ${fmtDateTime(autoDate)}.` : "Informe a data da venda."}
+                </p>
+              ) : (
+                <div>
+                  <Label htmlFor="ps-date">Data do pós-venda *</Label>
+                  <Input
+                    id="ps-date"
+                    type="datetime-local"
+                    value={postSaleAt}
+                    onChange={(e) => setPostSaleAt(e.target.value)}
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Esta data é mantida mesmo se a data da venda mudar.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           <DialogFooter>
             <Button type="submit" disabled={saving} className="bg-emerald-600 hover:bg-emerald-700">

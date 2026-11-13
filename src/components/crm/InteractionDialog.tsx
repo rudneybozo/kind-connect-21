@@ -40,10 +40,18 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
+  conflictReason?: string | null; // motivo informado no aviso de atendimento (60 dias)
 };
 
 /** Registrar ou editar uma visita/contato e o retorno agendado. */
-export function InteractionDialog({ clientId, interaction, open, onOpenChange, onSaved }: Props) {
+export function InteractionDialog({
+  clientId,
+  interaction,
+  open,
+  onOpenChange,
+  onSaved,
+  conflictReason,
+}: Props) {
   const editing = Boolean(interaction);
   const [form, setForm] = useState({
     type: "visita" as InteractionType,
@@ -110,9 +118,12 @@ export function InteractionDialog({ clientId, interaction, open, onOpenChange, o
         setSaving(false);
         return toast.error("Sessão expirada");
       }
-      ({ error } = await supabase
-        .from("interactions")
-        .insert({ ...values, user_id: userData.user.id, client_id: clientId }));
+      ({ error } = await supabase.from("interactions").insert({
+        ...values,
+        user_id: userData.user.id,
+        client_id: clientId,
+        conflict_reason: conflictReason ?? null,
+      }));
     }
     setSaving(false);
     if (error) return toast.error("Não foi possível salvar: " + error.message);

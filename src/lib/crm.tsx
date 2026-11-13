@@ -163,3 +163,78 @@ export function usePendingDeletionCount(enabled: boolean) {
     },
   });
 }
+
+// ---------------------------------------------------------------------
+// Formas de pagamento (vendas externas)
+// ---------------------------------------------------------------------
+export const PAYMENT_METHODS = [
+  { value: "dinheiro", label: "Dinheiro" },
+  { value: "cartao", label: "Cartão" },
+  { value: "pix", label: "Pix" },
+  { value: "deposito", label: "Depósito em conta" },
+  { value: "boleto", label: "Boleto bancário" },
+  { value: "pendencia", label: "Pendência" },
+] as const;
+
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number]["value"];
+
+export function paymentLabel(m: string | null | undefined) {
+  return PAYMENT_METHODS.find((p) => p.value === m)?.label ?? "Não informada";
+}
+
+// ---------------------------------------------------------------------
+// Ficha do cliente (base compartilhada): resumo para todos, completa para quem cadastrou e admin
+// ---------------------------------------------------------------------
+export type ClientCard = {
+  id: string;
+  name: string;
+  legal_name: string | null;
+  person_type: string;
+  document: string | null;
+  phone: string | null;
+  address: string | null;
+  contact_person: string | null;
+  email: string | null;
+  notes: string | null;
+  user_id: string;
+  store_id: string | null;
+  origin_name: string;
+  origin_store: string;
+  can_edit: boolean;
+  created_at: string;
+};
+
+export function useClientCard(clientId: string) {
+  return useQuery({
+    queryKey: ["clientCard", clientId],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("client_card", { p_client_id: clientId });
+      if (error) throw error;
+      return ((data ?? [])[0] ?? null) as ClientCard | null;
+    },
+  });
+}
+
+/** Outro vendedor atendeu este cliente nos últimos 60 dias? (aviso antes de agendar/vender) */
+export async function checkAttendance(clientId: string) {
+  const { data, error } = await supabase.rpc("client_attendance_check", { p_client_id: clientId });
+  if (error) throw error;
+  return (data ?? [])[0] ?? null;
+}
+
+/** Contadores do menu de administração */
+export function useOpenAlertsCount(enabled: boolean) {
+  return useQuery({
+    queryKey: ["openAlertsCount"],
+    enabled,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("attendance_alerts")
+        .select("id", { count: "exact", head: true })
+        .is("seen_at", null);
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
+}

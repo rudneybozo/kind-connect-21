@@ -19,10 +19,27 @@ import {
   RefreshCw,
   Trash2,
   History,
+  BarChart3,
+  AlertTriangle,
+  ChevronDown,
+  Settings,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { FilterProvider, displayName, useMe, useStores, usePendingDeletionCount } from "@/lib/crm";
+import {
+  FilterProvider,
+  displayName,
+  useMe,
+  useStores,
+  usePendingDeletionCount,
+  useOpenAlertsCount,
+} from "@/lib/crm";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async () => {
@@ -40,7 +57,9 @@ function AuthedLayout() {
   const [open, setOpen] = useState(false);
   const me = useMe();
   const stores = useStores();
-  const pendingCount = usePendingDeletionCount(me.data?.role === "admin" && me.data.active);
+  const adminOn = me.data?.role === "admin" && Boolean(me.data?.active);
+  const pendingCount = usePendingDeletionCount(adminOn);
+  const alertsCount = useOpenAlertsCount(adminOn);
 
   // Se a sessão expirar ou o usuário sair em outra aba, volta para o login
   useEffect(() => {
@@ -95,23 +114,34 @@ function AuthedLayout() {
   const isAdmin = me.data.role === "admin";
   const storeName = stores.data?.find((s) => s.id === me.data!.store_id)?.name;
 
-  const navItems = [
+  const mainItems = [
     { to: "/app", label: "Painel", icon: LayoutDashboard },
     { to: "/app/clientes", label: "Clientes", icon: Users },
-    ...(isAdmin
-      ? [
-          { to: "/app/equipe", label: "Equipe", icon: ShieldCheck },
-          { to: "/app/exclusoes", label: "Exclusões", icon: Trash2 },
-          { to: "/app/historico", label: "Histórico", icon: History },
-        ]
-      : []),
-  ] as const;
-  const badgeFor = (to: string) =>
-    to === "/app/exclusoes" && (pendingCount.data ?? 0) > 0 ? (
+    ...(isAdmin ? [{ to: "/app/relatorios", label: "Relatórios", icon: BarChart3 }] : []),
+  ];
+  const adminItems = isAdmin
+    ? [
+        { to: "/app/equipe", label: "Equipe e lojas", icon: ShieldCheck },
+        { to: "/app/exclusoes", label: "Exclusões", icon: Trash2 },
+        { to: "/app/alertas", label: "Alertas", icon: AlertTriangle },
+        { to: "/app/historico", label: "Histórico", icon: History },
+      ]
+    : [];
+  const navItems = [...mainItems, ...adminItems];
+  const countFor = (to: string) =>
+    to === "/app/exclusoes"
+      ? (pendingCount.data ?? 0)
+      : to === "/app/alertas"
+        ? (alertsCount.data ?? 0)
+        : 0;
+  const adminCount = (pendingCount.data ?? 0) + (alertsCount.data ?? 0);
+  const bubble = (n: number) =>
+    n > 0 ? (
       <span className="ml-1 rounded-full bg-destructive px-1.5 text-[11px] leading-5 text-destructive-foreground">
-        {pendingCount.data}
+        {n}
       </span>
     ) : null;
+  const badgeFor = (to: string) => bubble(countFor(to));
 
   const isActive = (to: string) =>
     location.pathname === to || (to !== "/app" && location.pathname.startsWith(to));
@@ -129,7 +159,7 @@ function AuthedLayout() {
             </Link>
 
             <nav className="hidden md:flex items-center gap-1">
-              {navItems.map((item) => {
+              {mainItems.map((item) => {
                 const Icon = item.icon;
                 return (
                   <Link
@@ -142,10 +172,37 @@ function AuthedLayout() {
                     }`}
                   >
                     <Icon className="h-4 w-4" /> {item.label}
-                    {badgeFor(item.to)}
                   </Link>
                 );
               })}
+              {isAdmin && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors outline-none ${
+                      adminItems.some((i) => isActive(i.to))
+                        ? "bg-secondary text-secondary-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                    }`}
+                  >
+                    <Settings className="h-4 w-4" /> Administração
+                    {bubble(adminCount)}
+                    <ChevronDown className="h-3 w-3" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    {adminItems.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <DropdownMenuItem key={item.to} asChild>
+                          <Link to={item.to} className="flex items-center gap-2 cursor-pointer">
+                            <Icon className="h-4 w-4" /> {item.label}
+                            <span className="ml-auto">{badgeFor(item.to)}</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </nav>
 
             <div className="flex items-center gap-2 min-w-0">

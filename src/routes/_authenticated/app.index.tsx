@@ -34,18 +34,13 @@ function formatDate(d: string) {
   return format(date, "dd/MM 'às' HH:mm", { locale: ptBR });
 }
 
-type ClientRef = {
-  name: string;
-  company: string | null;
-  user_id: string;
-  store_id: string | null;
-} | null;
+type ClientRef = { name: string; legal_name: string | null } | null;
 
-/** Aplica o filtro de loja/vendedor pelo cliente relacionado (join !inner). */
-function byClient<T extends { eq: (col: string, val: string) => T }>(query: T, f: AdminFilter): T {
+/** Filtro de loja/vendedor pelo autor do registro (loja do vendedor no momento do registro). */
+function byAuthor<T extends { eq: (col: string, val: string) => T }>(query: T, f: AdminFilter): T {
   let q = query;
-  if (f.storeId !== "all") q = q.eq("clients.store_id", f.storeId);
-  if (f.sellerId !== "all") q = q.eq("clients.user_id", f.sellerId);
+  if (f.storeId !== "all") q = q.eq("store_id", f.storeId);
+  if (f.sellerId !== "all") q = q.eq("user_id", f.sellerId);
   return q;
 }
 
@@ -62,11 +57,11 @@ function Dashboard() {
   const followUps = useQuery({
     queryKey: ["followups", effective],
     queryFn: async () => {
-      const { data, error } = await byClient(
+      const { data, error } = await byAuthor(
         supabase
           .from("interactions")
           .select(
-            "id, follow_up_at, contact_person, notes, type, client_id, clients!inner(name, company, user_id, store_id)",
+            "id, follow_up_at, contact_person, notes, type, client_id, user_id, clients(name, legal_name)",
           )
           .eq("follow_up_done", false)
           .not("follow_up_at", "is", null)
@@ -81,13 +76,14 @@ function Dashboard() {
   const postSales = useQuery({
     queryKey: ["postsales", effective],
     queryFn: async () => {
-      const { data, error } = await byClient(
+      const { data, error } = await byAuthor(
         supabase
           .from("sales")
           .select(
-            "id, sold_at, post_sale_due_at, amount, description, client_id, clients!inner(name, company, user_id, store_id)",
+            "id, sold_at, post_sale_due_at, amount, description, client_id, user_id, clients(name, legal_name)",
           )
           .is("post_sale_done_at", null)
+          .is("settles_sale_id", null)
           .order("post_sale_due_at", { ascending: true }),
         effective,
       );
@@ -99,16 +95,23 @@ function Dashboard() {
   const monthSales = useQuery({
     queryKey: ["monthSales", effective],
     queryFn: async () => {
-      const { data, error } = await byClient(
+      const { data, error } = await byAuthor(
         supabase
           .from("sales")
-          .select("amount, clients!inner(user_id, store_id)")
+          .select("amount, payment_method, settled_at")
           .gte("sold_at", startOfMonth(new Date()).toISOString()),
         effective,
       );
       if (error) throw error;
       const rows = data || [];
-      return { count: rows.length, total: rows.reduce((sum, r) => sum + Number(r.amount ?? 0), 0) };
+      // Pendência não conta como venda (a quitação conta, na data da NF)
+      const paid = rows.filter((r) => r.payment_method !== "pendencia");
+      const openPending = rows.filter((r) => r.payment_method === "pendencia" && !r.settled_at);
+      return {
+        count: paid.length,
+        total: paid.reduce((sum, r) => sum + Number(r.amount ?? 0), 0),
+        pendingCount: openPending.length,
+      };
     },
   });
 
@@ -184,7 +187,7 @@ function Dashboard() {
 
   const canNotify = typeof window !== "undefined" && "Notification" in window;
   const permission = canNotify ? Notification.permission : "denied";
-  const sellerLabel = (c: ClientRef) => (isAdmin && c ? ` · ${personName(c.user_id)}` : "");
+  const sellerLabel = (userId: string) => (isAdmin ? ` · ${personName(userId)}` : "");
 
   return (
     <div className="space-y-6">
@@ -229,7 +232,14 @@ function Dashboard() {
           icon={<DollarSign className="h-4 w-4 text-emerald-600" />}
           label={`Vendas em ${format(new Date(), "MMMM", { locale: ptBR })}`}
           value={monthSales.data ? formatBRL(monthSales.data.total) : "—"}
-          hint={monthSales.data ? `${monthSales.data.count} venda(s)` : undefined}
+          hint={
+            monthSales.data
+              ? `${monthSales.data.count} venda(s)` +
+                (monthSales.data.pendingCount
+                  ? ` · ${monthSales.data.pendingCount} pendência(s) em aberto`
+                  : "")
+              : undefined
+          }
         />
       </div>
 
@@ -265,9 +275,9 @@ function Dashboard() {
                     >
                       {client?.name || "Cliente"}
                     </Link>
-                    {client?.company && (
+                    {client?.legal_name && client.legal_name !== client.name && (
                       <span className="text-xs text-muted-foreground truncate">
-                        · {client.company}
+                        · {client.legal_name}
                       </span>
                     )}
                     <Badge variant={overdue ? "destructive" : "secondary"}>
@@ -276,7 +286,7 @@ function Dashboard() {
                   </div>
                   <p className="text-xs text-muted-foreground truncate">
                     {f.contact_person ? `Com: ${f.contact_person}` : "Retorno"}
-                    {sellerLabel(client)}
+                    {sellerLabel(f.user_id)}
                   </p>
                   {f.notes && (
                     <p className="text-xs text-muted-foreground line-clamp-1">{f.notes}</p>
@@ -330,9 +340,9 @@ function Dashboard() {
                     >
                       {client?.name || "Cliente"}
                     </Link>
-                    {client?.company && (
+                    {client?.legal_name && client.legal_name !== client.name && (
                       <span className="text-xs text-muted-foreground truncate">
-                        · {client.company}
+                        · {client.legal_name}
                       </span>
                     )}
                     <Badge variant={overdue ? "destructive" : "secondary"}>
@@ -342,7 +352,7 @@ function Dashboard() {
                   <p className="text-xs text-muted-foreground truncate">
                     Vendido em {format(new Date(s.sold_at), "dd/MM/yyyy", { locale: ptBR })}
                     {s.amount != null && ` · ${formatBRL(s.amount)}`}
-                    {sellerLabel(client)}
+                    {sellerLabel(s.user_id)}
                   </p>
                   {s.description && (
                     <p className="text-xs text-muted-foreground line-clamp-1">{s.description}</p>

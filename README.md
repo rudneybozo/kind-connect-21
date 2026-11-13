@@ -21,7 +21,7 @@ O app roda no navegador (computador ou celular). Os dados ficam no **Supabase** 
 3. Espere o projeto ficar pronto (1–2 minutos).
 4. No menu da esquerda, abra **SQL Editor → New query**.
 5. Abra o arquivo [`supabase/schema.sql`](supabase/schema.sql) deste repositório, copie **tudo**, cole no editor e clique em **Run**. Deve aparecer "Success".
-   Depois faça o mesmo com [`supabase/02_historico_e_exclusoes.sql`](supabase/02_historico_e_exclusoes.sql) (histórico, exclusões e pós-venda).
+   Depois faça o mesmo com [`supabase/02_historico_e_exclusoes.sql`](supabase/02_historico_e_exclusoes.sql) (histórico, exclusões e pós-venda) e, por último, com [`supabase/03_base_compartilhada_vendas.sql`](supabase/03_base_compartilhada_vendas.sql) (base de clientes do grupo, formas de pagamento, quitação, alertas e relatórios).
    - Isso cria as tabelas, as 3 lojas e todas as regras de segurança.
    - Pode rodar de novo sem problema, porque o script não duplica nada.
 6. Em **Project Settings → API** (ou **Data API**), copie dois valores:
@@ -80,9 +80,10 @@ Use a raiz de um domínio ou subdomínio. Em subpasta (ex.: `site.com/crm`) o ap
 | **Clientes**         | Todos      | Lista, busca, ordenação e cadastro. O admin vê a loja e o vendedor de cada cliente.                                                 |
 | **Ficha do cliente** | Todos      | Dados, WhatsApp e mapa com um toque, visitas e contatos, vendas, editar e excluir.                                                  |
 | **Equipe e lojas**   | Só o admin | Liberar e bloquear usuários, trocar loja e papel, excluir (com opção de transferir os clientes), criar, renomear e desativar lojas. |
-
-| **Exclusões** | Só o admin | Aprovar ou recusar pedidos de exclusão dos vendedores. |
-| **Histórico** | Só o admin | Todas as ações (quem, quando, o quê), com hash de cada registro e o botão **Verificar Integridade da Cadeia**. |
+| **Exclusões**        | Só o admin | Aprovar ou recusar pedidos de exclusão dos vendedores. |
+| **Alertas**          | Só o admin | Avisos de quando um vendedor atendeu cliente que outro atendeu nos últimos 60 dias, com o motivo informado. |
+| **Relatórios**       | Só o admin | Vendas por vendedor, loja, período e forma de pagamento, produtividade, pendências em aberto. Exporta PDF e Excel. |
+| **Histórico**        | Só o admin | Todas as ações (quem, quando, o quê), com hash de cada registro e o botão **Verificar Integridade da Cadeia**. |
 
 **Exclusão com aprovação.** Vendedor não exclui nada direto: toca na lixeira, escreve o motivo e o pedido vai para o administrador. O admin exclui na hora. Excluir é _lógico_: o registro some das telas, mas continua guardado no banco (`deleted_at`).
 
@@ -90,9 +91,15 @@ Use a raiz de um domínio ou subdomínio. Em subpasta (ex.: `site.com/crm`) o ap
 
 **Histórico com cadeia de hashes.** Cada atividade é gravada pelo próprio banco (gatilhos), com o hash SHA-256 do registro anterior — como uma corrente. A tabela é somente inclusão (não aceita alteração nem remoção). O botão de verificação recalcula toda a corrente no navegador: verde = íntegra; vermelho = mostra o primeiro registro adulterado. Limite conhecido: apagar os _últimos_ registros não quebra a corrente; para isso, anote de tempos em tempos o hash mais recente.
 
+**Base de clientes do grupo.** Os clientes são do grupo (Incoplim, Bem Limp e Cometa). Empresa exige CNPJ, que preenche a razão social pela Receita (BrasilAPI). Pessoa física tem CPF opcional; sem documento, o sistema avisa se o telefone já existe. CPF/CNPJ não se repete. Qualquer vendedor encontra qualquer cliente na busca, mas no cliente de outro vê só nome, telefone, endereço e pessoa de contato, e apenas as próprias visitas e vendas.
+
+**Aviso de 60 dias.** Ao agendar ou vender para um cliente que outro vendedor atendeu nos últimos 60 dias, aparece um aviso e é preciso informar o motivo. Só o administrador recebe o alerta.
+
+**Vendas e pagamento.** A venda conta para quem a registrou, na loja em que ele estava naquele momento. A forma de pagamento é obrigatória (dinheiro, cartão, pix, depósito, boleto ou pendência). Pendência fica fora dos totais até ser quitada pelo botão **Quitar**, que pede número da NF, data da NF e forma de pagamento; a quitação conta na data da NF. Nas outras vendas a NF é opcional.
+
 **Regras de segurança.** Ficam no banco de dados, então valem mesmo se alguém tentar burlar o site:
 
-- Um vendedor não vê nem altera clientes, visitas ou vendas de outro vendedor.
+- Um vendedor encontra clientes de outros só pela busca e com dados básicos; não vê nem altera visitas, vendas e observações de outro vendedor.
 - Uma conta nova não acessa nada até o admin liberar.
 - Só o admin altera usuários e lojas. O admin não consegue remover o próprio acesso por engano.
 

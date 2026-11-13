@@ -74,24 +74,29 @@ export type Database = {
           id: string;
           user_id: string;
           store_id: string | null;
+          person_type: string;
+          document: string | null;
           name: string;
-          company: string | null;
+          legal_name: string | null;
+          contact_person: string | null;
           phone: string | null;
+          phone_digits: string | null;
           email: string | null;
           address: string | null;
-          notes: string | null;
           created_at: string;
           updated_at: string;
-          deleted_at: string | null;
-          deleted_by: string | null;
         };
         Insert: {
           id?: string;
           user_id: string;
           store_id?: string | null;
+          person_type?: string;
+          document?: string | null;
           name: string;
-          company?: string | null;
+          legal_name?: string | null;
+          contact_person?: string | null;
           phone?: string | null;
+          phone_digits?: string | null;
           email?: string | null;
           address?: string | null;
           notes?: string | null;
@@ -104,9 +109,13 @@ export type Database = {
           id?: string;
           user_id?: string;
           store_id?: string | null;
+          person_type?: string;
+          document?: string | null;
           name?: string;
-          company?: string | null;
+          legal_name?: string | null;
+          contact_person?: string | null;
           phone?: string | null;
+          phone_digits?: string | null;
           email?: string | null;
           address?: string | null;
           notes?: string | null;
@@ -130,27 +139,29 @@ export type Database = {
           id: string;
           user_id: string;
           client_id: string;
+          store_id: string | null;
           type: string;
           happened_at: string;
           contact_person: string | null;
           notes: string | null;
           follow_up_at: string | null;
           follow_up_done: boolean;
+          conflict_reason: string | null;
           created_at: string;
           updated_at: string;
-          deleted_at: string | null;
-          deleted_by: string | null;
         };
         Insert: {
           id?: string;
           user_id: string;
           client_id: string;
+          store_id?: string | null;
           type?: string;
           happened_at: string;
           contact_person?: string | null;
           notes?: string | null;
           follow_up_at?: string | null;
           follow_up_done?: boolean;
+          conflict_reason?: string | null;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
@@ -160,12 +171,14 @@ export type Database = {
           id?: string;
           user_id?: string;
           client_id?: string;
+          store_id?: string | null;
           type?: string;
           happened_at?: string;
           contact_person?: string | null;
           notes?: string | null;
           follow_up_at?: string | null;
           follow_up_done?: boolean;
+          conflict_reason?: string | null;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
@@ -186,24 +199,38 @@ export type Database = {
           id: string;
           user_id: string;
           client_id: string;
+          store_id: string | null;
           sold_at: string;
           amount: number | null;
           description: string | null;
+          payment_method: string | null;
+          nf_number: string | null;
+          nf_date: string | null;
+          settles_sale_id: string | null;
+          settled_at: string | null;
+          settled_by_sale_id: string | null;
+          conflict_reason: string | null;
           post_sale_due_at: string;
           post_sale_manual: boolean;
           post_sale_done_at: string | null;
           created_at: string;
           updated_at: string;
-          deleted_at: string | null;
-          deleted_by: string | null;
         };
         Insert: {
           id?: string;
           user_id: string;
           client_id: string;
+          store_id?: string | null;
           sold_at?: string;
           amount?: number | null;
           description?: string | null;
+          payment_method?: string | null;
+          nf_number?: string | null;
+          nf_date?: string | null;
+          settles_sale_id?: string | null;
+          settled_at?: string | null;
+          settled_by_sale_id?: string | null;
+          conflict_reason?: string | null;
           post_sale_due_at?: string;
           post_sale_manual?: boolean;
           post_sale_done_at?: string | null;
@@ -216,9 +243,17 @@ export type Database = {
           id?: string;
           user_id?: string;
           client_id?: string;
+          store_id?: string | null;
           sold_at?: string;
           amount?: number | null;
           description?: string | null;
+          payment_method?: string | null;
+          nf_number?: string | null;
+          nf_date?: string | null;
+          settles_sale_id?: string | null;
+          settled_at?: string | null;
+          settled_by_sale_id?: string | null;
+          conflict_reason?: string | null;
           post_sale_due_at?: string;
           post_sale_manual?: boolean;
           post_sale_done_at?: string | null;
@@ -329,6 +364,56 @@ export type Database = {
           },
         ];
       };
+      attendance_alerts: {
+        Row: {
+          id: string;
+          client_id: string;
+          record_type: string;
+          record_id: string;
+          user_id: string;
+          other_user_id: string | null;
+          other_last_at: string | null;
+          reason: string | null;
+          created_at: string;
+          seen_by: string | null;
+          seen_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          client_id: string;
+          record_type: string;
+          record_id: string;
+          user_id: string;
+          other_user_id?: string | null;
+          other_last_at?: string | null;
+          reason?: string | null;
+          created_at?: string;
+          seen_by?: string | null;
+          seen_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          client_id?: string;
+          record_type?: string;
+          record_id?: string;
+          user_id?: string;
+          other_user_id?: string | null;
+          other_last_at?: string | null;
+          reason?: string | null;
+          created_at?: string;
+          seen_by?: string | null;
+          seen_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attendance_alerts_client_id_fkey";
+            columns: ["client_id"];
+            isOneToOne: false;
+            referencedRelation: "clients";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -361,6 +446,67 @@ export type Database = {
       reject_deletion: {
         Args: { p_request_id: string; p_note?: string | null };
         Returns: undefined;
+      };
+      search_clients: {
+        Args: { p_query: string; p_limit?: number };
+        Returns: {
+          id: string;
+          name: string;
+          legal_name: string | null;
+          person_type: string;
+          document: string | null;
+          phone: string | null;
+          address: string | null;
+          contact_person: string | null;
+          origin_name: string;
+          origin_store: string;
+          is_mine: boolean;
+        }[];
+      };
+      client_card: {
+        Args: { p_client_id: string };
+        Returns: {
+          id: string;
+          name: string;
+          legal_name: string | null;
+          person_type: string;
+          document: string | null;
+          phone: string | null;
+          address: string | null;
+          contact_person: string | null;
+          email: string | null;
+          notes: string | null;
+          user_id: string;
+          store_id: string | null;
+          origin_name: string;
+          origin_store: string;
+          can_edit: boolean;
+          created_at: string;
+        }[];
+      };
+      check_client_duplicates: {
+        Args: { p_document: string | null; p_phone: string | null; p_exclude?: string | null };
+        Returns: {
+          id: string;
+          name: string;
+          match: string;
+          origin_name: string;
+          origin_store: string;
+        }[];
+      };
+      client_attendance_check: {
+        Args: { p_client_id: string };
+        Returns: { other_name: string; other_store: string; last_at: string; days_ago: number }[];
+      };
+      mark_alert_seen: { Args: { p_alert_id: string }; Returns: undefined };
+      settle_pending_sale: {
+        Args: {
+          p_sale_id: string;
+          p_payment_method: string;
+          p_nf_number: string;
+          p_nf_date: string;
+        };
+        Returns: string;
       };
     };
     Enums: {
